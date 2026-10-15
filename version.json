@@ -1,0 +1,7 @@
+{
+  "versionCode": 2,
+  "versionName": "1.1.0",
+  "titulo": "Actualización disponible",
+  "notas": "• Nuevo calendario mensual y semanal interactivo estilo Flo\n• Animaciones y micro-interacciones fluidas con físicas de resorte\n• Consulta de métricas en bases anteriores\n• Sistema de actualización dentro de la misma app",
+  "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk"
+}
