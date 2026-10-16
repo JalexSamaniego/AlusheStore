@@ -11,3 +11,24 @@ captures/
 *.apk
 *.aab
 /app/release/
+
+# Keystores & Keys
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+
+# Local SQLite databases & backups
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Secrets & scripts
+*.env
+google-services.json
+*.ps1
+*.log
+
