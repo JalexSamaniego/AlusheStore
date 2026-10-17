@@ -49,6 +49,13 @@ fun Modifier.recordToPicture(picture: Picture): Modifier = this.drawWithCache {
     val height = size.height.toInt().coerceAtLeast(1)
     onDrawWithContent {
         val pictureCanvas = Canvas(picture.beginRecording(width, height))
+        // Pintar fondo sólido crema Alushe (#F7F5F0) explícito para evitar transparencia
+        pictureCanvas.drawRect(
+            androidx.compose.ui.geometry.Rect(0f, 0f, width.toFloat(), height.toFloat()),
+            androidx.compose.ui.graphics.Paint().apply {
+                color = androidx.compose.ui.graphics.Color(0xFFF7F5F0)
+            }
+        )
         CanvasDrawScope().draw(this, layoutDirection, pictureCanvas, size) {
             this@onDrawWithContent.drawContent()
         }
@@ -62,28 +69,30 @@ fun Modifier.recordToPicture(picture: Picture): Modifier = this.drawWithCache {
 // ── Funciones de Utilidad para Bitmap y Compartir ──────────────────────────────
 
 fun pictureToBitmap(picture: Picture): Bitmap {
-    val width = picture.width.coerceAtLeast(1)
-    val height = picture.height.coerceAtLeast(1)
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        Bitmap.createBitmap(picture)
-    } else {
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bitmap)
-        canvas.drawPicture(picture)
-        bitmap
-    }
+    val width = picture.width.takeIf { it > 0 } ?: 1080
+    val height = picture.height.takeIf { it > 0 } ?: 1920
+    // Siempre usar un Bitmap ARGB_8888 de software.
+    // NUNCA usar Bitmap.createBitmap(picture) en API 28+ porque genera un HARDWARE bitmap
+    // cuyo búfer de píxeles no puede leerse al comprimir o compartir, produciendo imágenes negras.
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    // Fondo crema sólido editorial Alushe
+    canvas.drawColor(android.graphics.Color.parseColor("#F7F5F0"))
+    canvas.drawPicture(picture)
+    return bitmap
 }
 
 fun saveReceiptBitmapToCache(
     context: Context,
     bitmap: Bitmap,
-    fileName: String = "recibo_alushe.png"
+    fileName: String = "recibo_alushe.jpg"
 ): Uri {
     val dir = File(context.cacheDir, "recibos")
     if (!dir.exists()) dir.mkdirs()
     val file = File(dir, fileName)
     FileOutputStream(file).use { out ->
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        // Comprimir en JPEG de alta calidad (95%): evita cualquier canal alfa transparente que WhatsApp torne en negro
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
     }
     return FileProvider.getUriForFile(
         context,
@@ -127,7 +136,7 @@ fun shareReceiptViaWhatsApp(
     val fullPhone = if (rawDigits.length == 10) "52$rawDigits" else rawDigits
 
     val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "image/png"
+        type = "image/jpeg"
         putExtra(Intent.EXTRA_STREAM, imageUri)
         putExtra(Intent.EXTRA_TEXT, messageText)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -143,7 +152,7 @@ fun shareReceiptViaWhatsApp(
         // Fallback al selector universal
         val chooser = Intent.createChooser(
             Intent(Intent.ACTION_SEND).apply {
-                type = "image/png"
+                type = "image/jpeg"
                 putExtra(Intent.EXTRA_STREAM, imageUri)
                 putExtra(Intent.EXTRA_TEXT, messageText)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -163,7 +172,7 @@ fun shareReceiptGeneric(
     val messageText = generateReceiptMessageText(cliente, item)
     val chooser = Intent.createChooser(
         Intent(Intent.ACTION_SEND).apply {
-            type = "image/png"
+            type = "image/jpeg"
             putExtra(Intent.EXTRA_STREAM, imageUri)
             putExtra(Intent.EXTRA_TEXT, messageText)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -185,9 +194,7 @@ fun AlusheReceiptCard(
     val abonos = item.abonos
 
     Card(
-        modifier = modifier
-            .width(360.dp)
-            .shadow(6.dp, ShapeCardLg, ambientColor = Color(0x10000000), spotColor = Color(0x15000000)),
+        modifier = modifier.width(360.dp),
         colors = CardDefaults.cardColors(containerColor = AlusheCream),
         shape = ShapeCardLg,
         border = BorderStroke(1.dp, AlusheBorder)
@@ -592,7 +599,7 @@ fun ComprobanteDialog(
                             val uri = saveReceiptBitmapToCache(
                                 context,
                                 bitmap,
-                                "recibo_apartado_${item.apartado.id}.png"
+                                "recibo_apartado_${item.apartado.id}.jpg"
                             )
                             shareReceiptViaWhatsApp(context, uri, cliente, item)
                         },
@@ -607,7 +614,7 @@ fun ComprobanteDialog(
                             val uri = saveReceiptBitmapToCache(
                                 context,
                                 bitmap,
-                                "recibo_apartado_${item.apartado.id}.png"
+                                "recibo_apartado_${item.apartado.id}.jpg"
                             )
                             shareReceiptGeneric(context, uri, cliente, item)
                         },

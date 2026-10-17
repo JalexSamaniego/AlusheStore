@@ -4,5 +4,5 @@
   "titulo": "Actualización v1.5 disponible",
   "notas": "• Módulo de Clientes y Apartados con historial de Abonos y trazabilidad completa\n• Generador de comprobantes visuales editoriales de cobro para WhatsApp\n• Blindaje de respaldos en Google Drive con verificación de esquemas y checkpoints WAL\n• Verificación de integridad criptográfica SHA-256 y limpieza automática de caché\n• Refactorización modular de arquitectura y optimización de listas",
   "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk",
-  "sha256": "46d031cee4ffdf2c60f8dd783321302c03306e4bc7e39bcc8eee2b8e1668ec2e"
+  "sha256": "4f95bc2c09f6d713dab46c34882487d273f4dcf0902528b8ea0d3ef0fa1df452"
 }
