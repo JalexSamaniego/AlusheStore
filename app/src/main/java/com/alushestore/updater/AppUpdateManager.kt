@@ -1,12 +1,20 @@
 package com.alushestore.updater
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.alushestore.BuildConfig
+import com.alushestore.MainActivity
+import com.alushestore.R
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +46,15 @@ data class GitHubAsset(
 )
 
 object AppUpdateManager {
+    // Constantes de Notificación
+    const val CHANNEL_ID_UPDATES = "alushe_updates"
+    const val CHANNEL_NAME_UPDATES = "Actualizaciones de AlusheStore"
+    const val NOTIF_ID_UPDATE = 2001
+    const val EXTRA_SHOW_UPDATE = "extra_show_update"
+
+    @Volatile
+    var pendingUpdatePrompt: Boolean = false
+
     // Configuración de GitHub
     const val GITHUB_OWNER = "JalexSamaniego"
     const val GITHUB_REPO = "AlusheStore"
@@ -93,6 +110,101 @@ object AppUpdateManager {
         } catch (_: Exception) {}
 
         null
+    }
+
+    /**
+     * Consulta si hay actualización y, de encontrarla, dispara la notificación del sistema.
+     */
+    suspend fun checkForUpdateAndNotify(context: Context, showNotificationIfFound: Boolean = true): UpdateInfo? {
+        val info = checkForUpdate()
+        if (info != null && showNotificationIfFound) {
+            showUpdateNotification(context, info)
+        }
+        return info
+    }
+
+    /**
+     * Crea el canal de notificaciones para actualizaciones si no existe (Android 8+).
+     */
+    fun initNotificationChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID_UPDATES,
+                CHANNEL_NAME_UPDATES,
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Avisos automáticos de nuevas versiones de AlusheStore"
+                enableLights(true)
+                lightColor = android.graphics.Color.GREEN
+                enableVibration(true)
+            }
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.createNotificationChannel(channel)
+        }
+    }
+
+    /**
+     * Emite una notificación del sistema indicando que hay una nueva versión disponible.
+     */
+    fun showUpdateNotification(context: Context, updateInfo: UpdateInfo, force: Boolean = false) {
+        try {
+            initNotificationChannel(context)
+
+            // Evitar spam de notificaciones para la misma versión a menos que sea forzado
+            val prefs = context.getSharedPreferences("alushe_prefs", Context.MODE_PRIVATE)
+            val lastNotified = prefs.getString("last_notified_update_version", null)
+            val currentVersionTag = updateInfo.versionName.ifBlank { "v${updateInfo.versionCode}" }
+
+            if (!force && lastNotified == currentVersionTag) {
+                return
+            }
+
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_SHOW_UPDATE, true)
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                NOTIF_ID_UPDATE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val smallIcon = R.drawable.ic_notification_update
+
+            val primerParrafoNotas = if (updateInfo.notas.isNotBlank()) {
+                updateInfo.notas.lines().filter { it.isNotBlank() }.take(3).joinToString("\n")
+            } else {
+                "Toca aquí para actualizar a la última versión disponible."
+            }
+
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID_UPDATES)
+                .setSmallIcon(smallIcon)
+                .setContentTitle(updateInfo.titulo.ifBlank { "¡Nueva versión disponible!" })
+                .setContentText("AlusheStore ${updateInfo.versionName} está lista para actualizar")
+                .setStyle(
+                    NotificationCompat.BigTextStyle()
+                        .setBigContentTitle(updateInfo.titulo.ifBlank { "¡Nueva versión ${updateInfo.versionName} disponible!" })
+                        .bigText("Se detectó una nueva versión disponible en GitHub:\n$primerParrafoNotas")
+                )
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setColor(0xFF2D7A4F.toInt()) // AlusheGreen
+                .build()
+
+            val nm = NotificationManagerCompat.from(context)
+            if (ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+            ) {
+                nm.notify(NOTIF_ID_UPDATE, notification)
+                prefs.edit().putString("last_notified_update_version", currentVersionTag).apply()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     /**

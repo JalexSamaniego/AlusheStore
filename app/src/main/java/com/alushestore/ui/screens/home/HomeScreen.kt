@@ -57,11 +57,17 @@ fun HomeScreen(
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var isCheckingUpdates by remember { mutableStateOf(false) }
 
-    // Verificación de actualización en segundo plano al iniciar
+    // Verificación de actualización en segundo plano al iniciar y manejo de notificación
     LaunchedEffect(Unit) {
-        val info = AppUpdateManager.checkForUpdate()
+        val info = AppUpdateManager.checkForUpdateAndNotify(context, showNotificationIfFound = true)
         if (info != null) {
             updateInfo = info
+        }
+        if (AppUpdateManager.pendingUpdatePrompt) {
+            AppUpdateManager.pendingUpdatePrompt = false
+            if (info != null) {
+                updateInfo = info
+            }
         }
     }
 
@@ -241,6 +247,7 @@ fun HomeScreen(
                             isCheckingUpdates = false
                             if (info != null) {
                                 updateInfo = info
+                                AppUpdateManager.showUpdateNotification(context, info, force = true)
                             } else {
                                 snackbarHostState.showSnackbar("AlusheStore está al día (v${BuildConfig.VERSION_NAME})")
                             }
