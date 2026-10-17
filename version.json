@@ -1,8 +1,8 @@
 {
-  "versionCode": 4,
-  "versionName": "1.5.1",
-  "titulo": "Actualización v1.5.1 disponible",
-  "notas": "• Notificaciones automáticas del sistema al detectar nuevas versiones disponibles\n• Corrección del comprobante de cobro para WhatsApp con renderizado en alta fidelidad y fondo crema sólido\n• Trazabilidad de abonos en apartados y verificación de integridad",
+  "versionCode": 5,
+  "versionName": "1.5.2",
+  "titulo": "Actualización v1.5.2 disponible",
+  "notas": "• Corrección completa de la vista previa y generación de comprobantes para WhatsApp\n• Notificaciones automáticas del sistema al detectar nuevas versiones disponibles\n• Mejoras de estabilidad y rendimiento",
   "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk",
-  "sha256": "87f3fdf7fb03a74b17dc9c79a5507a58b1f312e9086cfc3afc143ca3575ab3d9"
+  "sha256": "bf9c71a1821c686da8940849feb98060db54a8037d747eb4f9e7ec4291ca3d15"
 }
