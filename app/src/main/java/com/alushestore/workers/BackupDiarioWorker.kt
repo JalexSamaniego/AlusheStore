@@ -19,6 +19,7 @@ class BackupDiarioWorker(
 
     override suspend fun doWork(): Result {
         val db = AlusheDatabase.getDatabase(ctx)
+        db.checkpointWal()
         val base = db.baseDao().getBaseActiva().first() ?: return Result.success()
         val ventas = db.ventaDao().getVentasByBaseSync(base.id)
 

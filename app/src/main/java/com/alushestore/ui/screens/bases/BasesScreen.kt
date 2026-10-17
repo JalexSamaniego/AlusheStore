@@ -282,10 +282,12 @@ fun BasesScreen(
                 }
             } else {
                 items(uiState.respaldosDrive, key = { it.fileId }) { backup ->
-                    DriveBackupCard(
-                        backupInfo = backup,
-                        onClick = { viewModel.descargarRespaldoDrive(backup.fileId) }
-                    )
+                    Box(modifier = Modifier.animateItemPlacement()) {
+                        DriveBackupCard(
+                            backupInfo = backup,
+                            onClick = { viewModel.descargarRespaldoDrive(backup.fileId) }
+                        )
+                    }
                 }
             }
         }

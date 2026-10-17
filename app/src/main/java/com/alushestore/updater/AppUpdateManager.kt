@@ -21,7 +21,8 @@ data class UpdateInfo(
     @SerializedName("versionName") val versionName: String = "",
     @SerializedName("titulo") val titulo: String = "Actualización disponible",
     @SerializedName("notas") val notas: String = "",
-    @SerializedName("apkUrl") val apkUrl: String = ""
+    @SerializedName("apkUrl") val apkUrl: String = "",
+    @SerializedName("sha256") val sha256: String? = null
 )
 
 data class GitHubRelease(
@@ -112,13 +113,40 @@ object AppUpdateManager {
     }
 
     /**
-     * Descarga el archivo APK en el almacenamiento interno de la app con callback de progreso (0f a 1f).
+     * Calcula el hash SHA-256 de un archivo local.
+     */
+    fun calculateFileSha256(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { fis ->
+            val buffer = ByteArray(8 * 1024)
+            var bytesRead: Int
+            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                digest.update(buffer, 0, bytesRead)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Valida si el archivo coincide con el hash SHA-256 esperado (sin distinguir mayúsculas).
+     */
+    fun verifyFileSha256(file: File, expectedSha256: String): Boolean {
+        if (!file.exists()) return false
+        val actual = calculateFileSha256(file)
+        return actual.equals(expectedSha256.trim(), ignoreCase = true)
+    }
+
+    /**
+     * Descarga el archivo APK en el almacenamiento interno de la app con callback de progreso (0f a 1f)
+     * y verificación opcional de integridad SHA-256.
      */
     suspend fun downloadApk(
         context: Context,
         apkUrl: String,
+        expectedSha256: String? = null,
         onProgress: (Float) -> Unit
-    ): File? = withContext(Dispatchers.IO) {
+    ): Result<File> = withContext(Dispatchers.IO) {
+        var outputFile: File? = null
         try {
             var currentUrl = apkUrl
             var conn: HttpURLConnection
@@ -142,18 +170,19 @@ object AppUpdateManager {
                     currentUrl = conn.getHeaderField("Location")
                     conn.disconnect()
                     redirects++
-                    if (redirects > 5) return@withContext null
+                    if (redirects > 5) return@withContext Result.failure(Exception("Demasiadas redirecciones al descargar APK"))
                     continue
                 }
                 break
             }
 
             val totalBytes = conn.contentLength.toLong()
-            val outputFile = File(context.cacheDir, "AlusheStore-update.apk")
-            if (outputFile.exists()) outputFile.delete()
+            val targetFile = File(context.cacheDir, "AlusheStore-update.apk")
+            outputFile = targetFile
+            if (targetFile.exists()) targetFile.delete()
 
             conn.inputStream.use { input ->
-                FileOutputStream(outputFile).use { output ->
+                FileOutputStream(targetFile).use { output ->
                     val buffer = ByteArray(8 * 1024)
                     var bytesRead: Int
                     var totalRead = 0L
@@ -171,10 +200,43 @@ object AppUpdateManager {
                     output.flush()
                 }
             }
-            outputFile
+
+            // Verificación criptográfica SHA-256 si viene en el descriptor
+            if (!expectedSha256.isNullOrBlank()) {
+                val matches = verifyFileSha256(targetFile, expectedSha256)
+                if (!matches) {
+                    if (targetFile.exists()) targetFile.delete()
+                    return@withContext Result.failure(
+                        SecurityException("La verificación de integridad SHA-256 falló. El archivo APK está corrupto o alterado y fue eliminado.")
+                    )
+                }
+            }
+
+            Result.success(targetFile)
+        } catch (e: Exception) {
+            outputFile?.let { if (it.exists()) it.delete() }
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Limpia archivos .apk residuales de actualizaciones previas en la caché de la aplicación.
+     */
+    fun limpiarApksResiduales(context: Context) {
+        try {
+            val dirs = listOfNotNull(
+                context.cacheDir,
+                context.externalCacheDir
+            )
+            for (dir in dirs) {
+                if (dir.exists() && dir.isDirectory) {
+                    dir.listFiles { _, name -> name.endsWith(".apk", ignoreCase = true) }?.forEach { apkFile ->
+                        apkFile.delete()
+                    }
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
-            null
         }
     }
 

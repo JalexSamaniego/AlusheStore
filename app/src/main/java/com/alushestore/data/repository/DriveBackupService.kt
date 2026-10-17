@@ -9,6 +9,7 @@ import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File
 import com.google.gson.Gson
+import com.alushestore.data.local.entities.AbonoEntity
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.BaseEntity
 import com.alushestore.data.local.entities.ClienteEntity
@@ -23,18 +24,23 @@ data class BaseBackup(
     val totalMonto: Double,
     val cantidadVentas: Int,
     val exportadoEn: Long = System.currentTimeMillis(),
-    val appVersion: String = "1.0.0"
+    val appVersion: String = "1.0.0",
+    val schemaVersion: Int = 4,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 /** Respaldo completo de clientes y sus apartados/pedidos (un solo archivo en Drive) */
 data class ClientesBackup(
     val clientes: List<ClienteEntity>,
     val apartados: List<ApartadoEntity>,
+    val abonos: List<AbonoEntity> = emptyList(),
     val totalClientes: Int,
     val totalApartados: Int,
     val saldoPendiente: Double,
     val exportadoEn: Long = System.currentTimeMillis(),
-    val appVersion: String = "1.0.0"
+    val appVersion: String = "1.0.0",
+    val schemaVersion: Int = 4,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 class DriveBackupService(
@@ -174,6 +180,33 @@ class DriveBackupService(
                 drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
                 val json = outputStream.toString("UTF-8")
                 val backup = gson.fromJson(json, BaseBackup::class.java)
+                Result.success(backup)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Descarga el archivo de clientes consolidado desde Drive.
+     */
+    suspend fun descargarClientes(): Result<ClientesBackup> =
+        withContext(Dispatchers.IO) {
+            try {
+                val drive = buildDriveService()
+                val folderId = obtenerOCrearCarpeta(drive)
+
+                val existente = drive.files().list()
+                    .setQ("name = '$CLIENTES_FILE_NAME' and '$folderId' in parents and trashed = false")
+                    .setFields("files(id)")
+                    .execute()
+                    .files
+                    .firstOrNull()
+                    ?: return@withContext Result.failure(Exception("No se encontró el respaldo de clientes en Drive"))
+
+                val outputStream = java.io.ByteArrayOutputStream()
+                drive.files().get(existente.id).executeMediaAndDownloadTo(outputStream)
+                val json = outputStream.toString("UTF-8")
+                val backup = gson.fromJson(json, ClientesBackup::class.java)
                 Result.success(backup)
             } catch (e: Exception) {
                 Result.failure(e)

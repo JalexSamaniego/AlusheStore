@@ -16,6 +16,9 @@ interface BaseDao {
     @Query("SELECT * FROM bases WHERE cerrada = 0 ORDER BY fechaCreacion DESC LIMIT 1")
     fun getBaseActiva(): Flow<BaseEntity?>
 
+    @Query("SELECT * FROM bases WHERE cerrada = 0 ORDER BY fechaCreacion DESC LIMIT 1")
+    suspend fun getBaseActivaSync(): BaseEntity?
+
     @Query("SELECT * FROM bases WHERE id = :id")
     suspend fun getBaseById(id: Long): BaseEntity?
 

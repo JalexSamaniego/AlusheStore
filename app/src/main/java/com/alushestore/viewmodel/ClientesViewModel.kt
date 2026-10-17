@@ -5,6 +5,8 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.alushestore.data.local.entities.AbonoEntity
+import com.alushestore.data.local.entities.ApartadoConAbonos
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.ClienteResumen
@@ -30,7 +32,7 @@ data class ClientesUiState(
 
 data class ClienteDetalleUiState(
     val cliente: ClienteEntity? = null,
-    val apartados: List<ApartadoEntity> = emptyList(),
+    val apartados: List<ApartadoConAbonos> = emptyList(),
     val saldoPendiente: Double = 0.0,
     val countPendientes: Int = 0,
     val isLoading: Boolean = true,
@@ -156,17 +158,20 @@ class ClienteDetalleViewModel(
     private val _apartadoEditando = MutableStateFlow<ApartadoEntity?>(null)
     val apartadoEditando: StateFlow<ApartadoEntity?> = _apartadoEditando.asStateFlow()
 
+    private val _apartadoParaAbonar = MutableStateFlow<ApartadoConAbonos?>(null)
+    val apartadoParaAbonar: StateFlow<ApartadoConAbonos?> = _apartadoParaAbonar.asStateFlow()
+
     init {
         viewModelScope.launch {
             combine(
                 repository.getClienteById(clienteId),
-                repository.getApartadosByCliente(clienteId),
+                repository.getApartadosConAbonosByCliente(clienteId),
                 repository.getSaldoPendienteByCliente(clienteId),
                 repository.getCountPendientesByCliente(clienteId)
-            ) { cliente, apartados, saldo, count ->
+            ) { cliente, apartadosConAbonos, saldo, count ->
                 ClienteDetalleUiState(
                     cliente = cliente,
-                    apartados = apartados,
+                    apartados = apartadosConAbonos,
                     saldoPendiente = saldo ?: 0.0,
                     countPendientes = count,
                     isLoading = false
@@ -183,11 +188,13 @@ class ClienteDetalleViewModel(
         monto: Double,
         anticipo: Double,
         notas: String,
-        tipo: TipoApartado
+        tipo: TipoApartado,
+        vincularBaseActiva: Boolean = false
     ) {
         if (descripcion.isBlank()) return
         viewModelScope.launch {
-            repository.agregarApartado(clienteId, descripcion, monto, anticipo, notas, tipo)
+            val baseId = if (vincularBaseActiva) repository.getBaseActivaSync()?.id else null
+            repository.agregarApartado(clienteId, descripcion, monto, anticipo, notas, tipo, baseId)
             mostrarMensaje(if (tipo == TipoApartado.PEDIDO) "Pedido agregado ✓" else "Apartado agregado ✓")
         }
     }
@@ -227,11 +234,46 @@ class ClienteDetalleViewModel(
         }
     }
 
+    fun registrarAbono(
+        apartadoId: Long,
+        monto: Double,
+        nota: String = "",
+        vincularBaseActiva: Boolean = false
+    ) {
+        if (monto <= 0) return
+        viewModelScope.launch {
+            val baseId = if (vincularBaseActiva) repository.getBaseActivaSync()?.id else null
+            repository.registrarAbono(
+                apartadoId = apartadoId,
+                monto = monto,
+                nota = nota,
+                baseId = baseId
+            )
+            mostrarMensaje("Abono registrado ✓")
+        }
+    }
+
+    fun eliminarAbono(abono: AbonoEntity) {
+        viewModelScope.launch {
+            repository.eliminarAbono(abono)
+            mostrarMensaje("Abono eliminado")
+        }
+    }
+
     fun abrirAddApartadoSheet() { _showAddApartadoSheet.value = true }
     fun cerrarAddApartadoSheet() { _showAddApartadoSheet.value = false }
 
     fun abrirEditApartadoSheet(apartado: ApartadoEntity) { _apartadoEditando.value = apartado }
     fun cerrarEditApartadoSheet() { _apartadoEditando.value = null }
+
+    fun abrirAbonarSheet(apartado: ApartadoConAbonos) { _apartadoParaAbonar.value = apartado }
+    fun cerrarAbonarSheet() { _apartadoParaAbonar.value = null }
+
+    private val _apartadoParaComprobante = MutableStateFlow<ApartadoConAbonos?>(null)
+    val apartadoParaComprobante: StateFlow<ApartadoConAbonos?> = _apartadoParaComprobante.asStateFlow()
+
+    fun abrirComprobante(apartado: ApartadoConAbonos) { _apartadoParaComprobante.value = apartado }
+    fun cerrarComprobante() { _apartadoParaComprobante.value = null }
 
     fun mensajeMostrado() = _uiState.update { it.copy(mensaje = null) }
     private fun mostrarMensaje(msg: String) = _uiState.update { it.copy(mensaje = msg) }

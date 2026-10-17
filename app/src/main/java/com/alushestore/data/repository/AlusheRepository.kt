@@ -2,240 +2,111 @@ package com.alushestore.data.repository
 
 import android.content.Context
 import com.alushestore.data.local.AlusheDatabase
+import com.alushestore.data.local.entities.AbonoEntity
+import com.alushestore.data.local.entities.ApartadoConAbonos
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.BaseEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.ClienteResumen
-import com.alushestore.data.local.entities.EstadoApartado
 import com.alushestore.data.local.entities.TianguisSesionEntity
 import com.alushestore.data.local.entities.TianguisVentaEntity
 import com.alushestore.data.local.entities.TipoApartado
 import com.alushestore.data.local.entities.VentaEntity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
+/**
+ * Fachada principal de la capa de datos de AlusheStore.
+ * Desacopla y coordina los repositorios de dominio específicos:
+ * - [BasesVentasRepository] (ventas y administración de bases)
+ * - [TianguisRepository] (sesiones de venta en tianguis)
+ * - [ClientesRepository] (clientes, apartados, pedidos y abonos)
+ * - [BackupRepository] (sincronización con Drive y checkpoints WAL)
+ */
 class AlusheRepository(
     private val db: AlusheDatabase,
     private var driveService: DriveBackupService? = null
 ) {
-
-    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val syncMutex = Mutex()
-    private var syncJob: Job? = null
+    val backup = BackupRepository(db, driveService)
+    val ventas = BasesVentasRepository(db)
+    val tianguis = TianguisRepository(db)
+    val clientes = ClientesRepository(db, backup, ventas)
 
     fun inicializarDriveService(context: Context, accountName: String) {
         driveService = DriveBackupService(context, accountName)
+        backup.actualizarDriveService(driveService)
     }
 
-    fun tieneDriveService() = driveService != null
+    fun tieneDriveService(): Boolean = backup.tieneDriveService()
+
     // ── Bases ─────────────────────────────────────────────────────────────────
 
-    fun getAllBases(): Flow<List<BaseEntity>> = db.baseDao().getAllBases()
-
-    fun getBaseActiva(): Flow<BaseEntity?> = db.baseDao().getBaseActiva()
-
-    fun getBasesCerradas(): Flow<List<BaseEntity>> = db.baseDao().getBasesCerradas()
-
-    suspend fun crearBase(nombre: String, notas: String = ""): Long {
-        val base = BaseEntity(nombre = nombre, notas = notas)
-        return db.baseDao().insertBase(base)
-    }
-
-    suspend fun cerrarBase(baseId: Long) {
-        db.baseDao().cerrarBase(baseId)
-    }
-
-    suspend fun getBaseById(id: Long): BaseEntity? = db.baseDao().getBaseById(id)
-
-    suspend fun eliminarBase(base: BaseEntity) {
-        db.baseDao().deleteBase(base) // Las ventas se eliminan en cascada (Room)
-    }
+    fun getAllBases(): Flow<List<BaseEntity>> = ventas.getAllBases()
+    fun getBaseActiva(): Flow<BaseEntity?> = ventas.getBaseActiva()
+    suspend fun getBaseActivaSync(): BaseEntity? = ventas.getBaseActivaSync()
+    fun getBasesCerradas(): Flow<List<BaseEntity>> = ventas.getBasesCerradas()
+    suspend fun crearBase(nombre: String, notas: String = ""): Long = ventas.crearBase(nombre, notas)
+    suspend fun cerrarBase(baseId: Long) = ventas.cerrarBase(baseId)
+    suspend fun getBaseById(id: Long): BaseEntity? = ventas.getBaseById(id)
+    suspend fun eliminarBase(base: BaseEntity) = ventas.eliminarBase(base)
 
     // ── Ventas ────────────────────────────────────────────────────────────────
 
-    fun getVentasByBase(baseId: Long): Flow<List<VentaEntity>> =
-        db.ventaDao().getVentasByBase(baseId)
-
-    fun getTotalByBase(baseId: Long): Flow<Double?> =
-        db.ventaDao().getTotalByBase(baseId)
-
-    fun getCountByBase(baseId: Long): Flow<Int> =
-        db.ventaDao().getCountByBase(baseId)
-
-    fun getVentasHoy(baseId: Long): Flow<List<VentaEntity>> {
-        val hoyInicio = inicioDelDia()
-        val hoyFin = finDelDia()
-        return db.ventaDao().getVentasHoy(baseId, hoyInicio, hoyFin)
-    }
-
-    fun getTotalHoy(baseId: Long): Flow<Double?> {
-        val hoyInicio = inicioDelDia()
-        val hoyFin = finDelDia()
-        return db.ventaDao().getTotalByBaseAndFecha(baseId, hoyInicio, hoyFin)
-    }
-
-    suspend fun agregarVenta(baseId: Long, articulo: String, monto: Double, notas: String = ""): Long {
-        val venta = VentaEntity(
-            baseId = baseId,
-            articulo = articulo,
-            monto = monto,
-            notas = notas
-        )
-        return db.ventaDao().insertVenta(venta)
-    }
-
-    suspend fun eliminarVenta(ventaId: Long) {
-        db.ventaDao().deleteVentaById(ventaId)
-    }
-
-    suspend fun editarVenta(venta: VentaEntity) {
-        db.ventaDao().updateVenta(venta)
-    }
+    fun getVentasByBase(baseId: Long): Flow<List<VentaEntity>> = ventas.getVentasByBase(baseId)
+    fun getTotalByBase(baseId: Long): Flow<Double?> = ventas.getTotalByBase(baseId)
+    fun getCountByBase(baseId: Long): Flow<Int> = ventas.getCountByBase(baseId)
+    fun getVentasHoy(baseId: Long): Flow<List<VentaEntity>> = ventas.getVentasHoy(baseId)
+    fun getTotalHoy(baseId: Long): Flow<Double?> = ventas.getTotalHoy(baseId)
+    suspend fun agregarVenta(baseId: Long, articulo: String, monto: Double, notas: String = ""): Long =
+        ventas.agregarVenta(baseId, articulo, monto, notas)
+    suspend fun eliminarVenta(ventaId: Long) = ventas.eliminarVenta(ventaId)
+    suspend fun editarVenta(venta: VentaEntity) = ventas.editarVenta(venta)
 
     // ── Drive Backup ──────────────────────────────────────────────────────────
 
-    suspend fun respaldarBase(baseId: Long): Result<String> {
-        val drive = driveService ?: return Result.failure(Exception("No hay sesión de Google activa"))
-        val base = db.baseDao().getBaseById(baseId)
-            ?: return Result.failure(Exception("Base no encontrada"))
-        val ventas = db.ventaDao().getVentasByBaseSync(baseId)
-
-        val result = drive.subirBase(base, ventas)
-        if (result.isSuccess) {
-            db.baseDao().updateDriveFileId(baseId, result.getOrThrow())
-        }
-        return result
-    }
-
-    suspend fun listarRespaldosDrive(): Result<List<DriveBackupInfo>> {
-        val drive = driveService ?: return Result.failure(Exception("No hay sesión de Google activa"))
-        return drive.listarRespaldos()
-    }
-
-    suspend fun descargarRespaldo(fileId: String): Result<BaseBackup> {
-        val drive = driveService ?: return Result.failure(Exception("No hay sesión de Google activa"))
-        return drive.descargarRespaldo(fileId)
-    }
-
-    suspend fun importarBase(backup: BaseBackup) {
-        // Asegurar que sea tratada como cerrada y no choque con existentes (Room reemplazará o insertará)
-        val baseImportada = backup.base.copy(cerrada = true)
-        db.baseDao().insertBase(baseImportada)
-        // Eliminar las ventas que tenga esta base e insertar las de drive
-        val ventasViejas = db.ventaDao().getVentasByBaseSync(baseImportada.id)
-        ventasViejas.forEach { db.ventaDao().deleteVentaById(it.id) }
-        backup.ventas.forEach { db.ventaDao().insertVenta(it) }
-    }
+    suspend fun ejecutarWalCheckpoint() = backup.ejecutarWalCheckpoint()
+    suspend fun respaldarBase(baseId: Long): Result<String> = backup.respaldarBase(baseId)
+    suspend fun listarRespaldosDrive(): Result<List<DriveBackupInfo>> = backup.listarRespaldosDrive()
+    suspend fun descargarRespaldo(fileId: String): Result<BaseBackup> = backup.descargarRespaldo(fileId)
+    suspend fun importarBase(backupData: BaseBackup) = backup.importarBase(backupData)
 
     // ── Tianguis ──────────────────────────────────────────────────────────────
 
-    fun getSesionTianguisActiva(): Flow<TianguisSesionEntity?> =
-        db.tianguisSesionDao().getSesionActiva()
-
-    fun getAllSesionesTianguis(): Flow<List<TianguisSesionEntity>> =
-        db.tianguisSesionDao().getAllSesiones()
-
-    fun getVentasTianguisBySesion(sesionId: Long): Flow<List<TianguisVentaEntity>> =
-        db.tianguisVentaDao().getVentasBySesion(sesionId)
-
-    fun getTotalTianguisBySesion(sesionId: Long): Flow<Double?> =
-        db.tianguisVentaDao().getTotalBySesion(sesionId)
-
-    fun getCountTianguisBySesion(sesionId: Long): Flow<Int> =
-        db.tianguisVentaDao().getCountBySesion(sesionId)
-
-    suspend fun iniciarSesionTianguis(nombre: String): Long {
-        val sesion = TianguisSesionEntity(nombre = nombre)
-        return db.tianguisSesionDao().insertSesion(sesion)
-    }
-
-    suspend fun editarNombreSesion(sesion: TianguisSesionEntity, nuevoNombre: String) {
-        db.tianguisSesionDao().updateSesion(sesion.copy(nombre = nuevoNombre))
-    }
-
-    suspend fun agregarVentaTianguis(sesionId: Long, descripcion: String, monto: Double): Long {
-        val venta = TianguisVentaEntity(sesionId = sesionId, descripcion = descripcion, monto = monto)
-        return db.tianguisVentaDao().insertVenta(venta)
-    }
-
-    suspend fun editarVentaTianguis(venta: TianguisVentaEntity) {
-        db.tianguisVentaDao().updateVenta(venta)
-    }
-
-    suspend fun eliminarVentaTianguis(ventaId: Long) {
-        db.tianguisVentaDao().deleteVentaById(ventaId)
-    }
-
-    suspend fun cerrarSesionTianguis(sesionId: Long): TianguisSesionEntity? {
-        val sesion = db.tianguisSesionDao().getSesionById(sesionId) ?: return null
-        val cerrada = sesion.copy(activa = false, fechaFin = System.currentTimeMillis())
-        db.tianguisSesionDao().updateSesion(cerrada)
-        return cerrada
-    }
-
-    suspend fun guardarSesionEnBase(sesionId: Long, baseId: Long): Long {
-        val sesion = db.tianguisSesionDao().getSesionById(sesionId) ?: return -1
-        val total = db.tianguisVentaDao().getVentasBySesionSync(sesionId).sumOf { it.monto }
-        val venta = VentaEntity(
-            baseId = baseId,
-            articulo = sesion.nombre,
-            monto = total,
-            notas = "Sesión tianguis"
-        )
-        val ventaId = db.ventaDao().insertVenta(venta)
-        db.tianguisSesionDao().updateSesion(sesion.copy(guardadaEnBase = true))
-        return ventaId
-    }
-
-    suspend fun getVentaMasAltaTianguis(sesionId: Long): Double? =
-        db.tianguisVentaDao().getVentaMasAltaBySesion(sesionId)
-
+    fun getSesionTianguisActiva(): Flow<TianguisSesionEntity?> = tianguis.getSesionTianguisActiva()
+    fun getAllSesionesTianguis(): Flow<List<TianguisSesionEntity>> = tianguis.getAllSesionesTianguis()
+    fun getVentasTianguisBySesion(sesionId: Long): Flow<List<TianguisVentaEntity>> = tianguis.getVentasTianguisBySesion(sesionId)
+    fun getTotalTianguisBySesion(sesionId: Long): Flow<Double?> = tianguis.getTotalTianguisBySesion(sesionId)
+    fun getCountTianguisBySesion(sesionId: Long): Flow<Int> = tianguis.getCountTianguisBySesion(sesionId)
+    suspend fun iniciarSesionTianguis(nombre: String): Long = tianguis.iniciarSesionTianguis(nombre)
+    suspend fun editarNombreSesion(sesion: TianguisSesionEntity, nuevoNombre: String) =
+        tianguis.editarNombreSesion(sesion, nuevoNombre)
+    suspend fun agregarVentaTianguis(sesionId: Long, descripcion: String, monto: Double): Long =
+        tianguis.agregarVentaTianguis(sesionId, descripcion, monto)
+    suspend fun editarVentaTianguis(venta: TianguisVentaEntity) = tianguis.editarVentaTianguis(venta)
+    suspend fun eliminarVentaTianguis(ventaId: Long) = tianguis.eliminarVentaTianguis(ventaId)
+    suspend fun cerrarSesionTianguis(sesionId: Long): TianguisSesionEntity? = tianguis.cerrarSesionTianguis(sesionId)
+    suspend fun guardarSesionEnBase(sesionId: Long, baseId: Long): Long = tianguis.guardarSesionEnBase(sesionId, baseId)
+    suspend fun getVentaMasAltaTianguis(sesionId: Long): Double? = tianguis.getVentaMasAltaTianguis(sesionId)
     suspend fun getVentasTianguisBySesionSync(sesionId: Long): List<TianguisVentaEntity> =
-        db.tianguisVentaDao().getVentasBySesionSync(sesionId)
+        tianguis.getVentasTianguisBySesionSync(sesionId)
 
     // ── Clientes ──────────────────────────────────────────────────────────────
 
-    fun getAllClientes(): Flow<List<ClienteEntity>> = db.clienteDao().getAllClientes()
+    fun getAllClientes(): Flow<List<ClienteEntity>> = clientes.getAllClientes()
+    fun getClienteById(id: Long): Flow<ClienteEntity?> = clientes.getClienteById(id)
+    fun getResumenPorCliente(): Flow<List<ClienteResumen>> = clientes.getResumenPorCliente()
+    suspend fun agregarCliente(nombre: String, telefono: String = "", notas: String = ""): Long =
+        clientes.agregarCliente(nombre, telefono, notas)
+    suspend fun editarCliente(cliente: ClienteEntity) = clientes.editarCliente(cliente)
+    suspend fun eliminarCliente(cliente: ClienteEntity) = clientes.eliminarCliente(cliente)
 
-    fun getClienteById(id: Long): Flow<ClienteEntity?> = db.clienteDao().getClienteById(id)
+    // ── Apartados y Abonos ────────────────────────────────────────────────────
 
-    fun getResumenPorCliente(): Flow<List<ClienteResumen>> = db.apartadoDao().getResumenPorCliente()
-
-    suspend fun agregarCliente(nombre: String, telefono: String = "", notas: String = ""): Long {
-        val id = db.clienteDao().insertCliente(
-            ClienteEntity(nombre = nombre, telefono = telefono, notas = notas)
-        )
-        programarRespaldoClientes()
-        return id
-    }
-
-    suspend fun editarCliente(cliente: ClienteEntity) {
-        db.clienteDao().updateCliente(cliente)
-        programarRespaldoClientes()
-    }
-
-    suspend fun eliminarCliente(cliente: ClienteEntity) {
-        db.clienteDao().deleteCliente(cliente) // Sus apartados se eliminan en cascada (Room)
-        programarRespaldoClientes()
-    }
-
-    // ── Apartados / Pedidos ───────────────────────────────────────────────────
-
-    fun getApartadosByCliente(clienteId: Long): Flow<List<ApartadoEntity>> =
-        db.apartadoDao().getApartadosByCliente(clienteId)
-
-    fun getSaldoPendienteByCliente(clienteId: Long): Flow<Double?> =
-        db.apartadoDao().getSaldoPendienteByCliente(clienteId)
-
-    fun getCountPendientesByCliente(clienteId: Long): Flow<Int> =
-        db.apartadoDao().getCountPendientesByCliente(clienteId)
+    fun getApartadosByCliente(clienteId: Long): Flow<List<ApartadoEntity>> = clientes.getApartadosByCliente(clienteId)
+    fun getApartadosConAbonosByCliente(clienteId: Long): Flow<List<ApartadoConAbonos>> =
+        clientes.getApartadosConAbonosByCliente(clienteId)
+    fun getAbonosByApartado(apartadoId: Long): Flow<List<AbonoEntity>> = clientes.getAbonosByApartado(apartadoId)
+    fun getSaldoPendienteByCliente(clienteId: Long): Flow<Double?> = clientes.getSaldoPendienteByCliente(clienteId)
+    fun getCountPendientesByCliente(clienteId: Long): Flow<Int> = clientes.getCountPendientesByCliente(clienteId)
 
     suspend fun agregarApartado(
         clienteId: Long,
@@ -243,87 +114,27 @@ class AlusheRepository(
         monto: Double,
         anticipo: Double = 0.0,
         notas: String = "",
-        tipo: TipoApartado = TipoApartado.APARTADO
-    ): Long {
-        val id = db.apartadoDao().insertApartado(
-            ApartadoEntity(
-                clienteId = clienteId,
-                descripcion = descripcion,
-                monto = monto,
-                anticipo = anticipo,
-                notas = notas,
-                tipo = tipo
-            )
-        )
-        programarRespaldoClientes()
-        return id
-    }
+        tipo: TipoApartado = TipoApartado.APARTADO,
+        baseId: Long? = null
+    ): Long = clientes.agregarApartado(clienteId, descripcion, monto, anticipo, notas, tipo, baseId)
 
-    suspend fun editarApartado(apartado: ApartadoEntity) {
-        db.apartadoDao().updateApartado(apartado)
-        programarRespaldoClientes()
-    }
+    suspend fun editarApartado(apartado: ApartadoEntity) = clientes.editarApartado(apartado)
+    suspend fun eliminarApartado(apartadoId: Long) = clientes.eliminarApartado(apartadoId)
+    suspend fun marcarApartadoEntregado(apartadoId: Long) = clientes.marcarApartadoEntregado(apartadoId)
 
-    suspend fun eliminarApartado(apartadoId: Long) {
-        db.apartadoDao().deleteApartadoById(apartadoId)
-        programarRespaldoClientes()
-    }
+    suspend fun registrarAbono(
+        apartadoId: Long,
+        monto: Double,
+        nota: String = "",
+        baseId: Long? = null,
+        fecha: Long = System.currentTimeMillis()
+    ): Long = clientes.registrarAbono(apartadoId, monto, nota, baseId, fecha)
 
-    suspend fun marcarApartadoEntregado(apartadoId: Long) {
-        db.apartadoDao().updateEstado(apartadoId, EstadoApartado.ENTREGADO.name)
-        programarRespaldoClientes()
-    }
+    suspend fun eliminarAbono(abono: AbonoEntity) = clientes.eliminarAbono(abono)
 
     // ── Drive Backup: Clientes ────────────────────────────────────────────────
 
-    /** Sube todos los clientes y apartados a Drive (archivo único, se sobrescribe). */
-    suspend fun respaldarClientes(): Result<String> {
-        val drive = driveService ?: return Result.failure(Exception("No hay sesión de Google activa"))
-        val clientes = db.clienteDao().getAllClientesSync()
-        val apartados = db.apartadoDao().getAllApartadosSync()
-        val backup = ClientesBackup(
-            clientes = clientes,
-            apartados = apartados,
-            totalClientes = clientes.size,
-            totalApartados = apartados.size,
-            saldoPendiente = apartados
-                .filter { it.estado == EstadoApartado.PENDIENTE }
-                .sumOf { it.saldo }
-        )
-        return drive.subirClientes(backup)
-    }
-
-    /**
-     * Respaldo silencioso tras cada cambio: espera un momento por si hay varios cambios
-     * seguidos y sube una sola vez. Corre en un scope propio para no cancelarse al salir
-     * de la pantalla. Si falla (sin internet, sin permiso) se ignora; queda el botón manual.
-     */
-    private fun programarRespaldoClientes() {
-        if (driveService == null) return
-        syncJob?.cancel()
-        syncJob = syncScope.launch {
-            delay(2000)
-            syncMutex.withLock { respaldarClientes() }
-        }
-    }
-
-    // ── Helpers de tiempo ─────────────────────────────────────────────────────
-
-    private fun inicioDelDia(): Long {
-        val cal = java.util.Calendar.getInstance()
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-        cal.set(java.util.Calendar.MINUTE, 0)
-        cal.set(java.util.Calendar.SECOND, 0)
-        cal.set(java.util.Calendar.MILLISECOND, 0)
-        return cal.timeInMillis
-    }
-
-    private fun finDelDia(): Long {
-        val cal = java.util.Calendar.getInstance()
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
-        cal.set(java.util.Calendar.MINUTE, 59)
-        cal.set(java.util.Calendar.SECOND, 59)
-        cal.set(java.util.Calendar.MILLISECOND, 999)
-        return cal.timeInMillis
-    }
+    suspend fun respaldarClientes(): Result<String> = backup.respaldarClientes()
+    suspend fun descargarClientesRespaldo(): Result<ClientesBackup> = backup.descargarClientesRespaldo()
+    suspend fun importarClientes(backupData: ClientesBackup) = backup.importarClientes(backupData)
 }

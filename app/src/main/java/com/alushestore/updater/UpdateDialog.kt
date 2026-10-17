@@ -243,19 +243,20 @@ fun UpdateDialog(
                                 onClick = {
                                     state = UpdateState.DOWNLOADING
                                     coroutineScope.launch {
-                                        val file = AppUpdateManager.downloadApk(
+                                        val result = AppUpdateManager.downloadApk(
                                             context = context,
                                             apkUrl = updateInfo.apkUrl,
+                                            expectedSha256 = updateInfo.sha256,
                                             onProgress = { downloadProgress = it }
                                         )
-                                        if (file != null && file.exists()) {
+                                        result.onSuccess { file ->
                                             downloadedFile = file
                                             state = UpdateState.READY_TO_INSTALL
                                             // Lanzar instalación de inmediato
                                             AppUpdateManager.promptInstall(context, file)
-                                        } else {
+                                        }.onFailure { ex ->
                                             state = UpdateState.ERROR
-                                            errorMessage = "No se pudo descargar el instalador."
+                                            errorMessage = ex.message ?: "No se pudo descargar el instalador."
                                         }
                                     }
                                 },
@@ -294,17 +295,19 @@ fun UpdateDialog(
                                 onClick = {
                                     state = UpdateState.DOWNLOADING
                                     coroutineScope.launch {
-                                        val file = AppUpdateManager.downloadApk(
+                                        val result = AppUpdateManager.downloadApk(
                                             context = context,
                                             apkUrl = updateInfo.apkUrl,
+                                            expectedSha256 = updateInfo.sha256,
                                             onProgress = { downloadProgress = it }
                                         )
-                                        if (file != null && file.exists()) {
+                                        result.onSuccess { file ->
                                             downloadedFile = file
                                             state = UpdateState.READY_TO_INSTALL
                                             AppUpdateManager.promptInstall(context, file)
-                                        } else {
+                                        }.onFailure { ex ->
                                             state = UpdateState.ERROR
+                                            errorMessage = ex.message ?: "No se pudo descargar el instalador."
                                         }
                                     }
                                 },

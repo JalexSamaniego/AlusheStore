@@ -6,12 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.alushestore.data.local.dao.AbonoDao
 import com.alushestore.data.local.dao.ApartadoDao
 import com.alushestore.data.local.dao.BaseDao
 import com.alushestore.data.local.dao.ClienteDao
 import com.alushestore.data.local.dao.TianguisSesionDao
 import com.alushestore.data.local.dao.TianguisVentaDao
 import com.alushestore.data.local.dao.VentaDao
+import com.alushestore.data.local.entities.AbonoEntity
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.BaseEntity
 import com.alushestore.data.local.entities.ClienteEntity
@@ -86,6 +88,41 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+// ── Migración 3 → 4: agrega tabla de Abonos con trazabilidad y preserva anticipos previos ──
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `abonos` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `apartadoId` INTEGER NOT NULL,
+                `baseId` INTEGER,
+                `monto` REAL NOT NULL,
+                `fecha` INTEGER NOT NULL,
+                `nota` TEXT NOT NULL,
+                FOREIGN KEY(`apartadoId`) REFERENCES `apartados`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE INDEX IF NOT EXISTS `index_abonos_apartadoId`
+            ON `abonos` (`apartadoId`)
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE INDEX IF NOT EXISTS `index_abonos_baseId`
+            ON `abonos` (`baseId`)
+        """.trimIndent())
+
+        // Preservación de datos: inserta un abono por cada apartado existente con anticipo > 0
+        db.execSQL("""
+            INSERT INTO `abonos` (`apartadoId`, `baseId`, `monto`, `fecha`, `nota`)
+            SELECT `id`, NULL, `anticipo`, `fecha`, 'Anticipo inicial'
+            FROM `apartados`
+            WHERE `anticipo` > 0
+        """.trimIndent())
+    }
+}
+
 @Database(
     entities = [
         BaseEntity::class,
@@ -93,9 +130,10 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         TianguisSesionEntity::class,
         TianguisVentaEntity::class,
         ClienteEntity::class,
-        ApartadoEntity::class
+        ApartadoEntity::class,
+        AbonoEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AlusheDatabase : RoomDatabase() {
@@ -106,6 +144,18 @@ abstract class AlusheDatabase : RoomDatabase() {
     abstract fun tianguisVentaDao(): TianguisVentaDao
     abstract fun clienteDao(): ClienteDao
     abstract fun apartadoDao(): ApartadoDao
+    abstract fun abonoDao(): AbonoDao
+
+    /**
+     * Vuelca transacciones de SQLite WAL (Write-Ahead Logging) al archivo principal.
+     */
+    fun checkpointWal() {
+        try {
+            openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").close()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     companion object {
         @Volatile
@@ -118,7 +168,7 @@ abstract class AlusheDatabase : RoomDatabase() {
                     AlusheDatabase::class.java,
                     "alushestore_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 // fallbackToDestructiveMigration solo como último recurso
                 // en caso de versiones futuras sin migración definida
                 .fallbackToDestructiveMigration()

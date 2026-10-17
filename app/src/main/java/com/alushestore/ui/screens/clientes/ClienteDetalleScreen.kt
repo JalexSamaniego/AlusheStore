@@ -1,6 +1,9 @@
 package com.alushestore.ui.screens.clientes
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,7 +26,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.alushestore.data.local.entities.AbonoEntity
+import com.alushestore.data.local.entities.ApartadoConAbonos
 import com.alushestore.data.local.entities.ApartadoEntity
+import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.EstadoApartado
 import com.alushestore.data.local.entities.TipoApartado
 import com.alushestore.ui.components.*
@@ -186,15 +192,18 @@ fun ClienteDetalleScreen(
                     )
                 }
             } else {
-                items(uiState.apartados, key = { it.id }) { apartado ->
+                items(uiState.apartados, key = { it.apartado.id }) { item ->
                     Box(modifier = Modifier.animateItemPlacement()) {
                         ApartadoCard(
-                            apartado = apartado,
-                            onEdit = { viewModel.abrirEditApartadoSheet(apartado) },
-                            onDelete = { viewModel.eliminarApartado(apartado.id) },
-                            onEntregar = { viewModel.marcarEntregado(apartado.id) },
-                            onCancelar = { viewModel.marcarCancelado(apartado) },
-                            onReactivar = { viewModel.reactivar(apartado) }
+                            item = item,
+                            onEdit = { viewModel.abrirEditApartadoSheet(item.apartado) },
+                            onDelete = { viewModel.eliminarApartado(item.apartado.id) },
+                            onEntregar = { viewModel.marcarEntregado(item.apartado.id) },
+                            onCancelar = { viewModel.marcarCancelado(item.apartado) },
+                            onReactivar = { viewModel.reactivar(item.apartado) },
+                            onAbonar = { viewModel.abrirAbonarSheet(item) },
+                            onEliminarAbono = { abono -> viewModel.eliminarAbono(abono) },
+                            onVerComprobante = { viewModel.abrirComprobante(item) }
                         )
                     }
                 }
@@ -202,15 +211,23 @@ fun ClienteDetalleScreen(
         }
     }
 
-    ClienteDetalleModals(viewModel = viewModel)
+    ClienteDetalleModals(
+        viewModel = viewModel,
+        cliente = uiState.cliente
+    )
 }
 
 // ── Modals ────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ClienteDetalleModals(viewModel: ClienteDetalleViewModel) {
+private fun ClienteDetalleModals(
+    viewModel: ClienteDetalleViewModel,
+    cliente: ClienteEntity?
+) {
     val showAddSheet by viewModel.showAddApartadoSheet.collectAsStateWithLifecycle()
     val apartadoEditando by viewModel.apartadoEditando.collectAsStateWithLifecycle()
+    val apartadoParaAbonar by viewModel.apartadoParaAbonar.collectAsStateWithLifecycle()
+    val apartadoParaComprobante by viewModel.apartadoParaComprobante.collectAsStateWithLifecycle()
 
     if (showAddSheet) {
         ApartadoSheet(
@@ -240,20 +257,51 @@ private fun ClienteDetalleModals(viewModel: ClienteDetalleViewModel) {
             }
         )
     }
+
+    apartadoParaAbonar?.let { apartadoConAbonos ->
+        AbonarSheet(
+            apartadoConAbonos = apartadoConAbonos,
+            onDismiss = { viewModel.cerrarAbonarSheet() },
+            onSave = { monto, nota, vincularBase ->
+                viewModel.registrarAbono(
+                    apartadoId = apartadoConAbonos.apartado.id,
+                    monto = monto,
+                    nota = nota,
+                    vincularBaseActiva = vincularBase
+                )
+                viewModel.cerrarAbonarSheet()
+            }
+        )
+    }
+
+    if (apartadoParaComprobante != null && cliente != null) {
+        ComprobanteDialog(
+            cliente = cliente,
+            item = apartadoParaComprobante!!,
+            onDismiss = { viewModel.cerrarComprobante() }
+        )
+    }
 }
 
 // ── ApartadoCard ──────────────────────────────────────────────────────────────
 
 @Composable
 private fun ApartadoCard(
-    apartado: ApartadoEntity,
+    item: ApartadoConAbonos,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onEntregar: () -> Unit,
     onCancelar: () -> Unit,
-    onReactivar: () -> Unit
+    onReactivar: () -> Unit,
+    onAbonar: () -> Unit,
+    onEliminarAbono: (AbonoEntity) -> Unit,
+    onVerComprobante: () -> Unit
 ) {
+    val apartado = item.apartado
+    val abonos = item.abonos
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var abonoAEliminar by remember { mutableStateOf<AbonoEntity?>(null) }
+    var expandedAbonos by remember { mutableStateOf(false) }
     val pendiente = apartado.estado == EstadoApartado.PENDIENTE
 
     Box(
@@ -284,7 +332,13 @@ private fun ApartadoCard(
                         color = AlusheInkMid
                     )
                     when (apartado.estado) {
-                        EstadoApartado.PENDIENTE -> Pill("Pendiente", AlusheGreenSurface, AlusheGreenDark)
+                        EstadoApartado.PENDIENTE -> {
+                            if (item.estaLiquidado) {
+                                Pill("Liquidado", AlusheGreenSurface, AlusheGreenDark)
+                            } else {
+                                Pill("Pendiente", AlusheGreenSurface, AlusheGreenDark)
+                            }
+                        }
                         EstadoApartado.ENTREGADO -> Pill("Entregado", AlusheInk, AlusheCream)
                         EstadoApartado.CANCELADO -> Pill("Cancelado", AlusheRedSurface, AlusheRed)
                     }
@@ -317,13 +371,155 @@ private fun ApartadoCard(
                 // Montos
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Monto("Total", apartado.monto.toMXN(), AlusheInk, Modifier.weight(1f))
-                    Monto("Anticipo", apartado.anticipo.toMXN(), AlusheInkMid, Modifier.weight(1f))
                     Monto(
-                        "Resta",
-                        if (pendiente) apartado.saldo.toMXN() else "—",
-                        if (pendiente) AlusheGreenDark else AlusheInkLight,
+                        "Abonado",
+                        (if (abonos.isNotEmpty()) item.totalAbonado else apartado.anticipo).toMXN(),
+                        AlusheInkMid,
                         Modifier.weight(1f)
                     )
+                    Monto(
+                        "Resta",
+                        if (pendiente) item.saldoRestante.toMXN() else "—",
+                        if (pendiente) (if (item.estaLiquidado) AlusheGreenDark else AlusheRed) else AlusheInkLight,
+                        Modifier.weight(1f)
+                    )
+                }
+
+                // ── Historial de Abonos y Acción Rápida de Abonar ──
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clip(ShapePill)
+                            .clickable { expandedAbonos = !expandedAbonos }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            if (expandedAbonos) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (expandedAbonos) "Ocultar abonos" else "Ver abonos",
+                            modifier = Modifier.size(16.dp),
+                            tint = AlusheInkMid
+                        )
+                        Text(
+                            "Abonos (${abonos.size})",
+                            fontFamily = Montserrat,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = AlusheInkMid
+                        )
+                    }
+
+                    if (pendiente && !item.estaLiquidado) {
+                        Box(
+                            modifier = Modifier
+                                .clip(ShapePill)
+                                .background(AlusheGreenSurface)
+                                .bounceClickable { onAbonar() }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(13.dp),
+                                    tint = AlusheGreenDark
+                                )
+                                Text(
+                                    "Registrar abono",
+                                    fontFamily = Montserrat,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = AlusheGreenDark
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Desplegable de abonos con animación fluida
+                AnimatedVisibility(
+                    visible = expandedAbonos,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(ShapeCard)
+                            .background(AlusheCream.copy(alpha = 0.6f))
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (abonos.isEmpty()) {
+                            Text(
+                                "No hay abonos registrados para este apartado.",
+                                fontFamily = DmSans,
+                                fontSize = 12.sp,
+                                color = AlusheInkLight,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+                            )
+                        } else {
+                            abonos.forEach { abono ->
+                                key(abono.id) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(ShapeCard)
+                                            .background(AlusheWhite)
+                                            .border(0.5.dp, AlusheBorder, ShapeCard)
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                abono.fecha.toFechaCorta(),
+                                                fontFamily = DmSans,
+                                                fontSize = 11.sp,
+                                                color = AlusheInkLight
+                                            )
+                                            if (abono.nota.isNotBlank()) {
+                                                Text(
+                                                    abono.nota,
+                                                    fontFamily = DmSans,
+                                                    fontSize = 12.sp,
+                                                    color = AlusheInkMid
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            "+ ${abono.monto.toMXN()}",
+                                            fontFamily = Montserrat,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = AlusheGreenDark
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        IconButton(
+                                            onClick = { abonoAEliminar = abono },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Eliminar abono",
+                                                tint = AlusheRed.copy(alpha = 0.55f),
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Acciones
@@ -358,6 +554,14 @@ private fun ApartadoCard(
                         }
                     }
                     Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onVerComprobante, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Default.ReceiptLong,
+                            contentDescription = "Comprobante",
+                            tint = AlusheGreenDark,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
                     IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Default.Edit, "Editar", tint = AlusheInkMid, modifier = Modifier.size(17.dp))
                     }
@@ -382,6 +586,26 @@ private fun ApartadoCard(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    abonoAEliminar?.let { abono ->
+        AlertDialog(
+            onDismissRequest = { abonoAEliminar = null },
+            title = { Text("¿Eliminar abono?") },
+            text = { Text("Se eliminará el abono de ${abono.monto.toMXN()} (${abono.fecha.toFechaCorta()}). El saldo pendiente aumentará.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        abonoAEliminar = null
+                        onEliminarAbono(abono)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = AlusheRed)
+                ) { Text("Eliminar abono") }
+            },
+            dismissButton = {
+                TextButton(onClick = { abonoAEliminar = null }) { Text("Cancelar") }
             }
         )
     }
@@ -608,6 +832,230 @@ private fun ApartadoSheet(
                             (montoD != null && anticipoD > montoD)
                         if (!errorDescripcion && !errorMonto && !errorAnticipo) {
                             onSave(descripcion.trim(), montoD!!, anticipoD!!, notas.trim(), tipo)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    variante = ButtonVariante.VERDE
+                )
+            }
+        }
+    }
+}
+
+// ── AbonarSheet ───────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AbonarSheet(
+    apartadoConAbonos: ApartadoConAbonos,
+    onDismiss: () -> Unit,
+    onSave: (monto: Double, nota: String, vincularBaseActiva: Boolean) -> Unit
+) {
+    val apartado = apartadoConAbonos.apartado
+    val saldoRestante = apartadoConAbonos.saldoRestante
+    var monto by remember { mutableStateOf("") }
+    var nota by remember { mutableStateOf("") }
+    var vincularBase by remember { mutableStateOf(true) }
+    var errorMonto by remember { mutableStateOf(false) }
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        unfocusedContainerColor = AlusheWhite,
+        focusedContainerColor = AlusheWhite,
+        focusedBorderColor = AlusheGreen,
+        focusedLabelColor = AlusheGreen,
+        cursorColor = AlusheGreen
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = AlusheCream,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 14.dp, bottom = 4.dp)
+                    .size(width = 40.dp, height = 4.dp)
+                    .clip(ShapePill)
+                    .background(AlusheBorder)
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(4.dp)
+                        .height(28.dp)
+                        .clip(ShapePill)
+                        .background(AlusheGreen)
+                )
+                Column {
+                    Text(
+                        "Registrar Abono",
+                        fontFamily = PlayfairDisplay,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = AlusheInk
+                    )
+                    Text(
+                        apartado.descripcion,
+                        fontFamily = DmSans,
+                        fontSize = 13.sp,
+                        color = AlusheInkMid
+                    )
+                }
+            }
+
+            // Tarjeta resumen del saldo
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = AlusheWhite),
+                shape = ShapeCardLg,
+                border = androidx.compose.foundation.BorderStroke(1.dp, AlusheBorder)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Monto("Total", apartado.monto.toMXN(), AlusheInk)
+                    Monto("Abonado", apartadoConAbonos.totalAbonado.toMXN(), AlusheInkMid)
+                    Monto("Saldo Restante", saldoRestante.toMXN(), AlusheGreenDark)
+                }
+            }
+
+            // Monto del abono
+            OutlinedTextField(
+                value = monto,
+                onValueChange = { monto = it; errorMonto = false },
+                label = { Text("Monto del abono (MXN) *", fontFamily = Montserrat,
+                    fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
+                placeholder = { Text("0.00", fontFamily = DmSans) },
+                modifier = Modifier.fillMaxWidth(),
+                isError = errorMonto,
+                supportingText = if (errorMonto) {
+                    { Text("Ingresa un monto válido mayor a 0", fontFamily = DmSans) }
+                } else null,
+                singleLine = true,
+                shape = ShapeCard,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                colors = fieldColors
+            )
+
+            // Sugerencias rápidas de monto
+            if (saldoRestante > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val sugerencias = mutableListOf<Double>()
+                    if (saldoRestante > 100) sugerencias.add(100.0)
+                    if (saldoRestante > 200) sugerencias.add(200.0)
+                    if (saldoRestante > 500) sugerencias.add(500.0)
+                    sugerencias.add(saldoRestante)
+
+                    sugerencias.forEach { sug ->
+                        val esLiquidar = sug == saldoRestante
+                        Box(
+                            modifier = Modifier
+                                .clip(ShapePill)
+                                .background(if (esLiquidar) AlusheGreenSurface else AlusheCreamDark)
+                                .clickable { monto = sug.toInputText(); errorMonto = false }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (esLiquidar) "Liquidar (${sug.toMXN()})" else "+$${sug.toInt()}",
+                                fontFamily = Montserrat,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = if (esLiquidar) AlusheGreenDark else AlusheInkMid
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Nota / Forma de pago
+            OutlinedTextField(
+                value = nota,
+                onValueChange = { nota = it },
+                label = { Text("Nota / Método de pago (opcional)", fontFamily = Montserrat,
+                    fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
+                placeholder = { Text("Ej: Efectivo, Transferencia, En mano", fontFamily = DmSans) },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 2,
+                shape = ShapeCard,
+                colors = fieldColors
+            )
+
+            // Switch para vincular a base activa
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ShapeCard)
+                    .background(AlusheWhite)
+                    .border(1.dp, AlusheBorder, ShapeCard)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Ingresar en base de caja activa",
+                        fontFamily = Montserrat,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = AlusheInk
+                    )
+                    Text(
+                        "Suma este abono como venta en la base abierta actual",
+                        fontFamily = DmSans,
+                        fontSize = 11.sp,
+                        color = AlusheInkLight
+                    )
+                }
+                Switch(
+                    checked = vincularBase,
+                    onCheckedChange = { vincularBase = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = AlusheWhite,
+                        checkedTrackColor = AlusheGreen
+                    )
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AlusheButton(
+                    text = "Cancelar",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    variante = ButtonVariante.OUTLINE
+                )
+                AlusheButton(
+                    text = "Guardar abono",
+                    onClick = {
+                        val montoD = monto.toMontoOrNull()
+                        if (montoD == null || montoD <= 0) {
+                            errorMonto = true
+                        } else {
+                            onSave(montoD, nota.trim(), vincularBase)
                         }
                     },
                     modifier = Modifier.weight(1f),

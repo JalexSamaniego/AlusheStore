@@ -12,11 +12,12 @@ import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.alushestore.ui.AlusheNavGraph
 import com.alushestore.ui.theme.AlusheStoreTheme
+import com.alushestore.updater.AppUpdateManager
 
 class AlusheApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Inicialización global si se necesita en el futuro
+        AppUpdateManager.limpiarApksResiduales(this)
     }
 }
 
@@ -25,6 +26,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen().setOnExitAnimationListener { it.remove() }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        AppUpdateManager.limpiarApksResiduales(this)
 
         setContent {
             AlusheStoreTheme {

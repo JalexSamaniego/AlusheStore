@@ -1,6 +1,8 @@
 package com.alushestore.data.local.dao
 
 import androidx.room.*
+import com.alushestore.data.local.entities.AbonoEntity
+import com.alushestore.data.local.entities.ApartadoConAbonos
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.ClienteResumen
@@ -69,4 +71,51 @@ interface ApartadoDao {
 
     @Query("UPDATE apartados SET estado = :estado WHERE id = :id")
     suspend fun updateEstado(id: Long, estado: String)
+
+    @Query("UPDATE apartados SET anticipo = :anticipo WHERE id = :id")
+    suspend fun updateAnticipo(id: Long, anticipo: Double)
+
+    @Transaction
+    @Query("""
+        SELECT * FROM apartados WHERE clienteId = :clienteId
+        ORDER BY CASE estado WHEN 'PENDIENTE' THEN 0 ELSE 1 END, fecha DESC
+    """)
+    fun getApartadosConAbonosByCliente(clienteId: Long): Flow<List<ApartadoConAbonos>>
+
+    @Transaction
+    @Query("SELECT * FROM apartados WHERE id = :id")
+    suspend fun getApartadoConAbonosById(id: Long): ApartadoConAbonos?
+}
+
+// ── AbonoDao ──────────────────────────────────────────────────────────────────
+
+@Dao
+interface AbonoDao {
+
+    @Query("SELECT * FROM abonos WHERE apartadoId = :apartadoId ORDER BY fecha ASC")
+    fun getAbonosByApartado(apartadoId: Long): Flow<List<AbonoEntity>>
+
+    @Query("SELECT * FROM abonos WHERE apartadoId = :apartadoId ORDER BY fecha ASC")
+    suspend fun getAbonosByApartadoSync(apartadoId: Long): List<AbonoEntity>
+
+    @Query("SELECT * FROM abonos ORDER BY fecha ASC")
+    suspend fun getAllAbonosSync(): List<AbonoEntity>
+
+    @Query("SELECT SUM(monto) FROM abonos WHERE apartadoId = :apartadoId")
+    fun getTotalAbonadoByApartadoFlow(apartadoId: Long): Flow<Double?>
+
+    @Query("SELECT SUM(monto) FROM abonos WHERE apartadoId = :apartadoId")
+    suspend fun getTotalAbonadoByApartado(apartadoId: Long): Double?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAbono(abono: AbonoEntity): Long
+
+    @Update
+    suspend fun updateAbono(abono: AbonoEntity)
+
+    @Delete
+    suspend fun deleteAbono(abono: AbonoEntity)
+
+    @Query("DELETE FROM abonos WHERE id = :id")
+    suspend fun deleteAbonoById(id: Long)
 }

@@ -1,7 +1,8 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1.0",
-  "titulo": "Actualización disponible",
-  "notas": "• Nuevo calendario mensual y semanal interactivo estilo Flo\n• Animaciones y micro-interacciones fluidas con físicas de resorte\n• Consulta de métricas en bases anteriores\n• Sistema de actualización dentro de la misma app",
-  "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk"
+  "versionCode": 3,
+  "versionName": "1.5.0",
+  "titulo": "Actualización v1.5 disponible",
+  "notas": "• Módulo de Clientes y Apartados con historial de Abonos y trazabilidad completa\n• Generador de comprobantes visuales editoriales de cobro para WhatsApp\n• Blindaje de respaldos en Google Drive con verificación de esquemas y checkpoints WAL\n• Verificación de integridad criptográfica SHA-256 y limpieza automática de caché\n• Refactorización modular de arquitectura y optimización de listas",
+  "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk",
+  "sha256": "46d031cee4ffdf2c60f8dd783321302c03306e4bc7e39bcc8eee2b8e1668ec2e"
 }
