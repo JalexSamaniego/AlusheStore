@@ -1,8 +1,8 @@
 {
-  "versionCode": 5,
-  "versionName": "1.5.2",
-  "titulo": "Actualización v1.5.2 disponible",
-  "notas": "• Corrección completa de la vista previa y generación de comprobantes para WhatsApp\n• Notificaciones automáticas del sistema al detectar nuevas versiones disponibles\n• Mejoras de estabilidad y rendimiento",
+  "versionCode": 6,
+  "versionName": "2.0.0",
+  "titulo": "Actualización v2.0.0 disponible",
+  "notas": "• Inventario y punto de venta: catálogo, stock, lotes y escáner de código de barras\n• Almacén compartido con alushe.store: el stock es el mismo en los dos teléfonos y en la tienda\n• Sigue funcionando sin internet: la venta nunca se detiene y el descuento se manda solo al volver la señal\n• Corte mensual con utilidad por vendedor\n• Perfiles Dulce y Alejandro, cada quien queda registrado en su venta\n• Respaldo automático en Drive al abrir la app\n• Arranque corregido: ya no se queda en la pantalla negra\n• Cancelar un apartado ahora sí devuelve la pieza al stock",
   "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk",
-  "sha256": "bf9c71a1821c686da8940849feb98060db54a8037d747eb4f9e7ec4291ca3d15"
+  "sha256": "c4d2fdc06a874d05d54987441a9e6cd941aa8c6179bc86506d01753909bc6d5b"
 }
