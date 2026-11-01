@@ -108,6 +108,24 @@ fun EstadisticasScreen(
                 }
             }
 
+            // ── Tarjeta de Utilidades y Finanzas POS ──
+            item {
+                ResumenUtilidadCard(
+                    ventasBrutas = when (uiState.tabSeleccionada) {
+                        0 -> uiState.totalHoy
+                        1 -> uiState.totalSemanaFiltrado
+                        2 -> uiState.totalMesFiltrado
+                        else -> 0.0
+                    },
+                    costoVendido = uiState.costoVendidoPeriodo,
+                    utilidadNeta = uiState.utilidadNetaPeriodo,
+                    margenPct = uiState.margenPorcentajePeriodo,
+                    valorInventario = uiState.valorActualInventario,
+                    modoPrivacidad = uiState.modoPrivacidad,
+                    onTogglePrivacidad = { viewModel.toggleModoPrivacidad() }
+                )
+            }
+
             when (uiState.tabSeleccionada) {
 
                 // ══════════════════════════════════════════════════════════════
@@ -1030,4 +1048,173 @@ fun SinVentasMsg(msg: String) {
             .fillMaxWidth()
             .padding(vertical = 16.dp)
     )
+}
+
+// ── Tarjeta Colapsable de Utilidades & Inventario ──────────────────────────────
+
+@Composable
+fun ResumenUtilidadCard(
+    ventasBrutas: Double,
+    costoVendido: Double,
+    utilidadNeta: Double,
+    margenPct: Int,
+    valorInventario: Double,
+    modoPrivacidad: Boolean,
+    onTogglePrivacidad: () -> Unit
+) {
+    var expandido by remember { mutableStateOf(true) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = ShapeCardLg,
+        colors = CardDefaults.cardColors(containerColor = AlusheWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expandido = !expandido },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(AlusheGreenSurface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TrendingUp,
+                            contentDescription = null,
+                            tint = AlusheGreenDark,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Reporte de Utilidad Neta",
+                            fontFamily = Montserrat,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = AlusheInk
+                        )
+                        Text(
+                            text = if (expandido) "Toca para contraer" else "Toca para ver desglose financiero",
+                            fontFamily = DmSans,
+                            fontSize = 11.sp,
+                            color = AlusheInkLight
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onTogglePrivacidad, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = if (modoPrivacidad) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = "Privacidad",
+                            tint = if (modoPrivacidad) AlusheGreen else AlusheInkLight,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(onClick = { expandido = !expandido }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = if (expandido) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = AlusheInkLight
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = expandido,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    HorizontalDivider(color = AlusheBorder, thickness = 0.8.dp)
+                    Spacer(Modifier.height(10.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MetricBox(
+                            label = "Ventas Brutas",
+                            valor = if (modoPrivacidad) "••••••" else ventasBrutas.toMXN(),
+                            color = AlusheInk,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBox(
+                            label = "Costo Mercancía",
+                            valor = if (modoPrivacidad) "••••••" else costoVendido.toMXN(),
+                            color = AlusheInkMid,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MetricBox(
+                            label = "Utilidad Neta Libre",
+                            valor = if (modoPrivacidad) "••••••" else "${utilidadNeta.toMXN()} (+$margenPct%)",
+                            color = AlusheGreenDark,
+                            destacado = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBox(
+                            label = "Valor Inventario",
+                            valor = if (modoPrivacidad) "••••••" else valorInventario.toMXN(),
+                            color = AlusheInkMid,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "* Margen congelado según costo histórico al cobrar en POS.",
+                        fontFamily = DmSans,
+                        fontSize = 10.sp,
+                        color = AlusheInkLight
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricBox(
+    label: String,
+    valor: String,
+    color: Color,
+    destacado: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(ShapeCard)
+            .background(if (destacado) AlusheGreenSurface else AlusheCream)
+            .padding(10.dp)
+    ) {
+        Column {
+            Text(
+                text = label,
+                fontFamily = DmSans,
+                fontSize = 11.sp,
+                color = AlusheInkLight
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = valor,
+                fontFamily = Montserrat,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = color
+            )
+        }
+    }
 }

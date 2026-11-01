@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.alushestore.data.local.entities.BaseEntity
+import com.alushestore.data.local.entities.DetalleVentaEntity
 import com.alushestore.data.local.entities.VentaEntity
 import com.alushestore.data.repository.AlusheRepository
+import com.alushestore.domain.CalculadoraMetricas
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -61,6 +63,13 @@ data class EstadisticasUiState(
     val promedioDiarioMes: Double = 0.0,
     val mejorDiaMes: String = "",
 
+    // Métricas Financieras y Utilidad Neta (Inventario & POS)
+    val costoVendidoPeriodo: Double = 0.0,
+    val utilidadNetaPeriodo: Double = 0.0,
+    val margenPorcentajePeriodo: Int = 0,
+    val valorActualInventario: Double = 0.0,
+    val modoPrivacidad: Boolean = false,
+
     val isLoading: Boolean = true
 )
 
@@ -77,9 +86,28 @@ class EstadisticasViewModel(
 
     private var ventasJob: Job? = null
     private var todasLasVentasActuales: List<VentaEntity> = emptyList()
+    private var todosLosDetallesVenta: List<DetalleVentaEntity> = emptyList()
 
     init {
         cargarBases()
+        observarInventarioFinanzas()
+    }
+
+    private fun observarInventarioFinanzas() {
+        viewModelScope.launch {
+            combine(
+                repository.inventario.getAllDetallesVenta(),
+                repository.inventario.getValorTotalInventario()
+            ) { detalles, valorInv ->
+                todosLosDetallesVenta = detalles
+                _uiState.update { it.copy(valorActualInventario = valorInv) }
+                recalcularUtilidades()
+            }.collect()
+        }
+    }
+
+    fun toggleModoPrivacidad() {
+        _uiState.update { it.copy(modoPrivacidad = !it.modoPrivacidad) }
     }
 
     private fun cargarBases() {
@@ -142,6 +170,7 @@ class EstadisticasViewModel(
 
     fun seleccionarTab(index: Int) {
         _uiState.update { it.copy(tabSeleccionada = index) }
+        recalcularUtilidades()
     }
 
     // ── Navegación Mes (Calendario Flo) ────────────────────────────────────────
@@ -352,6 +381,7 @@ class EstadisticasViewModel(
 
         actualizarFiltroSemana()
         actualizarFiltroMes()
+        recalcularUtilidades()
     }
 
     private fun actualizarFiltroSemana() {
@@ -387,6 +417,7 @@ class EstadisticasViewModel(
                 )
             }
         }
+        recalcularUtilidades()
     }
 
     private fun actualizarFiltroMes() {
@@ -426,6 +457,38 @@ class EstadisticasViewModel(
                     totalMesFiltrado = ventas.sumOf { v -> v.monto }
                 )
             }
+        }
+        recalcularUtilidades()
+    }
+
+    private fun recalcularUtilidades() {
+        val state = _uiState.value
+        val ventasPeriodo = when (state.tabSeleccionada) {
+            0 -> state.ventasHoy
+            1 -> state.ventasSemanaFiltradas
+            2 -> state.ventasMesFiltradas
+            else -> emptyList()
+        }
+        val totalBruto = when (state.tabSeleccionada) {
+            0 -> state.totalHoy
+            1 -> state.totalSemanaFiltrado
+            2 -> state.totalMesFiltrado
+            else -> 0.0
+        }
+
+        // La fórmula vive en CalculadoraMetricas para que el corte mensual
+        // y esta pantalla no puedan dar números distintos.
+        val ventaIds = ventasPeriodo.map { it.id }.toSet()
+        val costo = CalculadoraMetricas.costoDeVentas(ventaIds, todosLosDetallesVenta)
+        val utilidad = totalBruto - costo
+        val margen = CalculadoraMetricas.margenSobreCosto(totalBruto, costo, utilidad)
+
+        _uiState.update {
+            it.copy(
+                costoVendidoPeriodo = costo,
+                utilidadNetaPeriodo = utilidad,
+                margenPorcentajePeriodo = margen
+            )
         }
     }
 

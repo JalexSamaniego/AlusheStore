@@ -61,14 +61,16 @@ class BasesVentasRepository(private val db: AlusheDatabase) {
         articulo: String,
         monto: Double,
         notas: String = "",
-        fecha: Long = System.currentTimeMillis()
+        fecha: Long = System.currentTimeMillis(),
+        vendedor: String = "PRINCIPAL"
     ): Long {
         val venta = VentaEntity(
             baseId = baseId,
             articulo = articulo,
             monto = monto,
             notas = notas,
-            fecha = fecha
+            fecha = fecha,
+            vendedor = vendedor
         )
         return db.ventaDao().insertVenta(venta)
     }

@@ -8,4 +8,13 @@
         <item name="windowSplashScreenIconBackgroundColor">#1A1A18</item>
         <item name="postSplashScreenTheme">@style/Theme.AlusheStore</item>
     </style>
+
+    <style name="Theme.AlusheStore.Dialog" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.55</item>
+    </style>
 </resources>

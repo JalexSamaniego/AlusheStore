@@ -21,6 +21,7 @@ import com.alushestore.ui.AlusheNavGraph
 import com.alushestore.ui.theme.AlusheStoreTheme
 import com.alushestore.updater.AppUpdateManager
 import com.alushestore.workers.AppUpdateWorker
+import com.alushestore.workers.SyncColaWorker
 import java.util.concurrent.TimeUnit
 
 class AlusheApp : Application() {
@@ -44,6 +45,17 @@ class AlusheApp : Application() {
                 ExistingPeriodicWorkPolicy.KEEP,
                 updateWork
             )
+
+            // Vaciar la cola de stock en cuanto haya red, aunque la app esté cerrada
+            val syncCola = PeriodicWorkRequestBuilder<SyncColaWorker>(15, TimeUnit.MINUTES)
+                .setConstraints(constraints)
+                .build()
+
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                SyncColaWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                syncCola
+            )
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -60,6 +72,11 @@ class MainActivity : ComponentActivity() {
         // Manejar toque en la notificación de actualización
         if (intent?.getBooleanExtra(AppUpdateManager.EXTRA_SHOW_UPDATE, false) == true) {
             AppUpdateManager.pendingUpdatePrompt = true
+        }
+
+        // Manejar accesos directos y widgets
+        intent?.getStringExtra(com.alushestore.ui.widgets.AlusheWidgetUpdater.EXTRA_ACTION)?.let {
+            pendingShortcutAction = it
         }
 
         // Solicitar permiso de notificaciones en Android 13+ (API 33+)
@@ -87,5 +104,12 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(AppUpdateManager.EXTRA_SHOW_UPDATE, false) == true) {
             AppUpdateManager.pendingUpdatePrompt = true
         }
+        intent?.getStringExtra(com.alushestore.ui.widgets.AlusheWidgetUpdater.EXTRA_ACTION)?.let {
+            pendingShortcutAction = it
+        }
+    }
+
+    companion object {
+        var pendingShortcutAction: String? = null
     }
 }

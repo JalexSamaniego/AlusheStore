@@ -49,6 +49,47 @@ class BackupRepository(
         return result
     }
 
+    /**
+     * Respaldo silencioso al abrir la app.
+     *
+     * Existe porque el respaldo de **ventas** era el único que no tenía nada
+     * automático: dependía de que alguien se acordara de tocar la nube. Los de
+     * clientes e inventario sí se disparan solos al cambiar algo, pero el
+     * dinero no.
+     *
+     * No avisa nada si sale bien. Si falla tampoco: se vuelve a intentar la
+     * próxima vez que se abra, y molestar con un error que el usuario no puede
+     * resolver no sirve de nada.
+     *
+     * **No respalda lo que está vacío.** Esto no es un detalle: los respaldos
+     * de clientes e inventario son un archivo único que se sobrescribe, así que
+     * subir una base vacía encima del bueno borraría el respaldo justo cuando
+     * más falta hace. Si no hay nada que guardar, no se toca Drive.
+     */
+    suspend fun respaldoDeApertura() = withContext(Dispatchers.IO) {
+        if (driveService == null) return@withContext
+
+        syncMutex.withLock {
+            ejecutarWalCheckpoint()
+
+            // Ventas de la base activa: lo que no tenía respaldo automático
+            val baseActiva = db.baseDao().getBaseActivaSync()
+            if (baseActiva != null && db.ventaDao().getVentasByBaseSync(baseActiva.id).isNotEmpty()) {
+                runCatching { respaldarBase(baseActiva.id) }
+            }
+
+            if (db.clienteDao().getAllClientesSync().isNotEmpty()) {
+                runCatching { respaldarClientes() }
+            }
+
+            val hayInventario = db.inventarioDao().getAllProductosSync().isNotEmpty() ||
+                    db.inventarioDao().getAllLotesSync().isNotEmpty()
+            if (hayInventario) {
+                runCatching { respaldarInventario() }
+            }
+        }
+    }
+
     suspend fun listarRespaldosDrive(): Result<List<DriveBackupInfo>> {
         val drive = driveService ?: return Result.failure(Exception("No hay sesión de Google activa"))
         return drive.listarRespaldos()
@@ -133,6 +174,60 @@ class BackupRepository(
         syncJob = syncScope.launch {
             delay(2000)
             syncMutex.withLock { respaldarClientes() }
+        }
+    }
+
+    // ── Respaldo de Inventario y Lotes ───────────────────────────────────────
+
+    suspend fun respaldarInventario(): Result<String> {
+        val drive = driveService ?: return Result.failure(Exception("No hay sesión de Google activa"))
+        ejecutarWalCheckpoint()
+        val lotes = db.inventarioDao().getAllLotesSync()
+        val productos = db.inventarioDao().getAllProductosSync()
+        val backup = InventarioBackup(
+            lotes = lotes,
+            productos = productos,
+            totalLotes = lotes.size,
+            totalProductos = productos.size,
+            totalStock = productos.sumOf { it.stockTotal },
+            valorInventario = productos.sumOf { it.costoUnitario * it.stockDisponible }
+        )
+        return drive.subirInventario(backup)
+    }
+
+    suspend fun descargarInventarioRespaldo(): Result<InventarioBackup> {
+        val drive = driveService ?: return Result.failure(Exception("No hay sesión de Google activa"))
+        return drive.descargarInventario()
+    }
+
+    suspend fun importarInventario(backup: InventarioBackup) = withContext(Dispatchers.IO) {
+        val existingLotes = db.inventarioDao().getAllLotesSync().associateBy { it.id }
+        for (lote in backup.lotes) {
+            if (existingLotes.containsKey(lote.id)) {
+                db.inventarioDao().updateLote(lote)
+            } else {
+                db.inventarioDao().insertLote(lote)
+            }
+        }
+        val existingProductos = db.inventarioDao().getAllProductosSync().associateBy { it.id }
+        for (prod in backup.productos) {
+            if (existingProductos.containsKey(prod.id)) {
+                db.inventarioDao().updateProducto(prod)
+            } else {
+                db.inventarioDao().insertProducto(prod)
+            }
+        }
+        ejecutarWalCheckpoint()
+    }
+
+    private var inventarioSyncJob: Job? = null
+
+    fun programarRespaldoInventario() {
+        if (driveService == null) return
+        inventarioSyncJob?.cancel()
+        inventarioSyncJob = syncScope.launch {
+            delay(2500)
+            syncMutex.withLock { respaldarInventario() }
         }
     }
 }

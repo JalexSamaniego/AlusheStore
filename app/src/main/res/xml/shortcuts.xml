@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="shortcut_nueva_venta"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_venta"
+        android:shortcutShortLabel="@string/shortcut_venta_short"
+        android:shortcutLongLabel="@string/shortcut_venta_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.alushestore"
+            android:targetClass="com.alushestore.ui.widgets.QuickSaleActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_pos_scanner"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/shortcut_pos_short"
+        android:shortcutLongLabel="@string/shortcut_pos_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.alushestore"
+            android:targetClass="com.alushestore.MainActivity">
+            <extra android:name="extra_action" android:value="pos_scanner" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_tianguis"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_tianguis"
+        android:shortcutShortLabel="@string/shortcut_tianguis_short"
+        android:shortcutLongLabel="@string/shortcut_tianguis_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.alushestore"
+            android:targetClass="com.alushestore.MainActivity">
+            <extra android:name="extra_action" android:value="tianguis" />
+        </intent>
+    </shortcut>
+
+</shortcuts>

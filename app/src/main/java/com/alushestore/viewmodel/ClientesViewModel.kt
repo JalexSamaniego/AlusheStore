@@ -13,6 +13,10 @@ import com.alushestore.data.local.entities.ClienteResumen
 import com.alushestore.data.local.entities.EstadoApartado
 import com.alushestore.data.local.entities.TipoApartado
 import com.alushestore.data.repository.AlusheRepository
+import com.alushestore.data.remote.CatalogoRemotoService
+import com.alushestore.data.remote.ProductoRemoto
+import com.alushestore.data.repository.ResultadoMovimiento
+import com.alushestore.domain.ProductoUnificado
 import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -161,7 +165,32 @@ class ClienteDetalleViewModel(
     private val _apartadoParaAbonar = MutableStateFlow<ApartadoConAbonos?>(null)
     val apartadoParaAbonar: StateFlow<ApartadoConAbonos?> = _apartadoParaAbonar.asStateFlow()
 
+    private val catalogoRemoto = CatalogoRemotoService()
+    private val _catalogoWeb = MutableStateFlow<List<ProductoRemoto>>(emptyList())
+
+    /**
+     * El catálogo completo, del teléfono y del almacén compartido, para poder
+     * apartar una pieza concreta en vez de sólo escribir una descripción.
+     *
+     * Leer el catálogo web no necesita sesión: la política `lectura_publica` de
+     * Supabase deja hacer SELECT con la clave publishable. Emparejar sólo hace
+     * falta para escribir, y eso ya lo resuelve la cola si no hay sesión.
+     */
+    val productosCatalogo: StateFlow<List<ProductoUnificado>> = combine(
+        repository.inventario.getProductosActivos(),
+        _catalogoWeb,
+        repository.cola.comprometidoPorProducto()
+    ) { locales, remotos, comprometido ->
+        ProductoUnificado.fusionar(locales.filter { it.activo }, remotos)
+            .map { p ->
+                val pend = p.idRemoto?.let { comprometido[it] } ?: 0
+                if (pend > 0) p.copy(stockDisponible = (p.stockDisponible - pend).coerceAtLeast(0)) else p
+            }
+            .filter { it.stockDisponible > 0 }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
+        cargarCatalogoWeb()
         viewModelScope.launch {
             combine(
                 repository.getClienteById(clienteId),
@@ -183,19 +212,79 @@ class ClienteDetalleViewModel(
         }
     }
 
+    /**
+     * Crea el apartado o pedido.
+     *
+     * Si viene [producto], además **reserva la pieza**: la del teléfono pasa de
+     * disponible a apartada, y la del almacén compartido sale por completo para
+     * que el otro teléfono no la venda. Sin producto se comporta como siempre,
+     * que es lo que se necesita para un pedido de algo que todavía no existe.
+     */
     fun agregarApartado(
         descripcion: String,
         monto: Double,
         anticipo: Double,
         notas: String,
         tipo: TipoApartado,
-        vincularBaseActiva: Boolean = false
+        vincularBaseActiva: Boolean = false,
+        producto: ProductoUnificado? = null
     ) {
         if (descripcion.isBlank()) return
         viewModelScope.launch {
-            val baseId = if (vincularBaseActiva) repository.getBaseActivaSync()?.id else null
-            repository.agregarApartado(clienteId, descripcion, monto, anticipo, notas, tipo, baseId)
-            mostrarMensaje(if (tipo == TipoApartado.PEDIDO) "Pedido agregado ✓" else "Apartado agregado ✓")
+            try {
+                val baseId = if (vincularBaseActiva) repository.getBaseActivaSync()?.id else null
+                val idLocal = producto?.idLocal
+                val idRemoto = producto?.idRemoto
+
+                val mensaje = when {
+                    // Un pedido no reserva nada: es algo que todavía no se tiene
+                    producto == null || tipo == TipoApartado.PEDIDO -> {
+                        repository.agregarApartado(clienteId, descripcion, monto, anticipo, notas, tipo, baseId)
+                        if (tipo == TipoApartado.PEDIDO) "Pedido agregado ✓" else "Apartado agregado ✓"
+                    }
+
+                    idLocal != null -> {
+                        repository.inventario.crearApartadoConInventario(
+                            clienteId = clienteId,
+                            productoId = idLocal,
+                            anticipo = anticipo,
+                            vendedor = repository.vendedorActivo.ifBlank { "PRINCIPAL" },
+                            notas = notas
+                        )
+                        "Apartado creado y pieza reservada ✓"
+                    }
+
+                    idRemoto != null -> {
+                        val r = repository.clientes.crearApartadoCompartido(
+                            clienteId = clienteId,
+                            productoRemotoId = idRemoto,
+                            descripcion = descripcion,
+                            monto = monto,
+                            anticipo = anticipo,
+                            vendedor = repository.vendedorActivo,
+                            notas = notas
+                        )
+                        cargarCatalogoWeb()
+                        if (r.almacen is ResultadoMovimiento.Encolado) {
+                            "Apartado creado — la pieza se descuenta del almacén al volver el internet"
+                        } else {
+                            "Apartado creado y pieza sacada del almacén compartido ✓"
+                        }
+                    }
+
+                    else -> "No se pudo identificar el producto"
+                }
+
+                mostrarMensaje(mensaje)
+            } catch (e: Exception) {
+                mostrarMensaje("No se creó el apartado: ${e.message}")
+            }
+        }
+    }
+
+    fun cargarCatalogoWeb() {
+        viewModelScope.launch {
+            catalogoRemoto.listarProductos().getOrNull()?.let { _catalogoWeb.value = it }
         }
     }
 
@@ -213,24 +302,39 @@ class ClienteDetalleViewModel(
         }
     }
 
-    fun marcarEntregado(apartadoId: Long) {
-        viewModelScope.launch {
-            repository.marcarApartadoEntregado(apartadoId)
-            mostrarMensaje("Marcado como entregado ✓")
-        }
+    fun marcarEntregado(apartado: ApartadoEntity) {
+        cambiarEstado(apartado, EstadoApartado.ENTREGADO, "Marcado como entregado ✓")
     }
 
     fun marcarCancelado(apartado: ApartadoEntity) {
-        viewModelScope.launch {
-            repository.editarApartado(apartado.copy(estado = EstadoApartado.CANCELADO))
-            mostrarMensaje("Cancelado")
-        }
+        cambiarEstado(apartado, EstadoApartado.CANCELADO, "Cancelado")
     }
 
     fun reactivar(apartado: ApartadoEntity) {
+        cambiarEstado(apartado, EstadoApartado.PENDIENTE, "Reactivado ✓")
+    }
+
+    /**
+     * Cambia el estado y devuelve/reserva la pieza, según corresponda.
+     *
+     * El mensaje que se muestra depende de qué pasó con el almacén compartido,
+     * porque no es lo mismo que la pieza ya esté de vuelta allá a que esté
+     * esperando internet.
+     */
+    private fun cambiarEstado(
+        apartado: ApartadoEntity,
+        nuevoEstado: EstadoApartado,
+        mensajeOk: String
+    ) {
         viewModelScope.launch {
-            repository.editarApartado(apartado.copy(estado = EstadoApartado.PENDIENTE))
-            mostrarMensaje("Reactivado ✓")
+            when (val r = repository.clientes.cambiarEstadoApartado(apartado, nuevoEstado)) {
+                is ResultadoMovimiento.Rechazado ->
+                    mostrarMensaje("No se pudo: ${r.motivo}")
+                is ResultadoMovimiento.Encolado ->
+                    mostrarMensaje("$mensajeOk — la pieza del almacén se ajusta al volver el internet")
+                else ->
+                    mostrarMensaje(mensajeOk)
+            }
         }
     }
 

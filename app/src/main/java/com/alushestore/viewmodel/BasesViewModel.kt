@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.alushestore.data.local.entities.BaseEntity
+import com.alushestore.data.local.entities.CorteConVendedores
 import com.alushestore.data.repository.AlusheRepository
 import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import kotlinx.coroutines.flow.*
@@ -32,6 +33,12 @@ class BasesViewModel(private val repository: AlusheRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(BasesUiState())
     val uiState: StateFlow<BasesUiState> = _uiState.asStateFlow()
 
+    // Vive fuera de BasesUiState a propósito: el combine de abajo reemplaza el
+    // estado completo en cada emisión, y al cerrar una base hay emisión, así que
+    // el corte se borraría justo al mostrarlo.
+    private val _corteVisible = MutableStateFlow<CorteConVendedores?>(null)
+    val corteVisible: StateFlow<CorteConVendedores?> = _corteVisible.asStateFlow()
+
     init {
         viewModelScope.launch {
             combine(
@@ -53,9 +60,36 @@ class BasesViewModel(private val repository: AlusheRepository) : ViewModel() {
 
     fun cerrarBase(baseId: Long, nombreBase: String) {
         viewModelScope.launch {
-            repository.cerrarBase(baseId)
-            mostrarMensaje("\"$nombreBase\" cerrada")
+            val corte = repository.cerrarBase(baseId)
+            if (corte != null) {
+                _corteVisible.value = corte
+                mostrarMensaje("\"$nombreBase\" cerrada · corte generado ✓")
+            } else {
+                mostrarMensaje("No se pudo generar el corte de \"$nombreBase\"")
+            }
         }
+    }
+
+    /**
+     * Muestra el estado de cuenta de una base ya cerrada.
+     * Si se cerró antes de que existieran los cortes, lo genera en ese momento
+     * a partir de sus ventas, sin el inventario de entonces, que ya no se conoce.
+     */
+    fun verCorte(baseId: Long) {
+        viewModelScope.launch {
+            val corte = repository.cortes.getCorteByBaseSync(baseId)
+                ?: repository.cortes.generarCorteRetroactivo(baseId)
+
+            if (corte != null) {
+                _corteVisible.value = corte
+            } else {
+                mostrarMensaje("No se pudo generar el corte de esta base")
+            }
+        }
+    }
+
+    fun cerrarDialogoCorte() {
+        _corteVisible.value = null
     }
 
     fun eliminarBase(base: BaseEntity) {

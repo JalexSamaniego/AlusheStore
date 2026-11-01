@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -39,6 +40,7 @@ object Destinations {
     fun estadisticas(baseId: Long? = null) = if (baseId != null && baseId > 0) "estadisticas?baseId=$baseId" else "estadisticas"
     const val TIANGUIS = "tianguis"
     const val CLIENTES = "clientes"
+    const val INVENTARIO = "inventario"
     const val CLIENTE_DETALLE = "cliente/{clienteId}"
     fun clienteDetalle(id: Long) = "cliente/$id"
 }
@@ -56,7 +58,15 @@ fun AlusheNavGraph() {
         val drive = savedAccount?.let {
             com.alushestore.data.repository.DriveBackupService(context, it)
         }
-        AlusheRepository(db, drive)
+        AlusheRepository(db, drive, context)
+    }
+
+    // Respaldo silencioso al abrir, si hay internet. El de ventas era el único
+    // que dependía de acordarse de tocar la nube; ahora se sube solo.
+    LaunchedEffect(Unit) {
+        if (hayInternet(context)) {
+            repository.backup.respaldoDeApertura()
+        }
     }
 
     NavHost(
@@ -96,20 +106,45 @@ fun AlusheNavGraph() {
                     navController.navigate(Destinations.HOME) {
                         popUpTo(Destinations.SPLASH) { inclusive = true }
                     }
+                    when (com.alushestore.MainActivity.pendingShortcutAction) {
+                        com.alushestore.ui.widgets.AlusheWidgetUpdater.ACTION_POS_SCANNER -> {
+                            com.alushestore.MainActivity.pendingShortcutAction = null
+                            navController.navigate(Destinations.INVENTARIO)
+                        }
+                        com.alushestore.ui.widgets.AlusheWidgetUpdater.ACTION_TIANGUIS -> {
+                            com.alushestore.MainActivity.pendingShortcutAction = null
+                            navController.navigate(Destinations.TIANGUIS)
+                        }
+                    }
                 }
             )
         }
 
         composable(Destinations.HOME) {
             val vm: com.alushestore.viewmodel.HomeViewModel = viewModel(
-                factory = HomeViewModelFactory(repository)
+                factory = HomeViewModelFactory(repository, context)
             )
+
+            androidx.compose.runtime.LaunchedEffect(com.alushestore.MainActivity.pendingShortcutAction) {
+                when (com.alushestore.MainActivity.pendingShortcutAction) {
+                    com.alushestore.ui.widgets.AlusheWidgetUpdater.ACTION_POS_SCANNER -> {
+                        com.alushestore.MainActivity.pendingShortcutAction = null
+                        navController.navigate(Destinations.INVENTARIO)
+                    }
+                    com.alushestore.ui.widgets.AlusheWidgetUpdater.ACTION_TIANGUIS -> {
+                        com.alushestore.MainActivity.pendingShortcutAction = null
+                        navController.navigate(Destinations.TIANGUIS)
+                    }
+                }
+            }
+
             HomeScreen(
                 viewModel = vm,
                 onNavigateToBases = { navController.navigate(Destinations.BASES) },
                 onNavigateToEstadisticas = { navController.navigate(Destinations.estadisticas()) },
                 onNavigateToTianguis = { navController.navigate(Destinations.TIANGUIS) },
-                onNavigateToClientes = { navController.navigate(Destinations.CLIENTES) }
+                onNavigateToClientes = { navController.navigate(Destinations.CLIENTES) },
+                onNavigateToInventario = { navController.navigate(Destinations.INVENTARIO) }
             )
         }
 
@@ -177,5 +212,31 @@ fun AlusheNavGraph() {
                 onBack = { navController.popBackStack() }
             )
         }
+
+        composable(Destinations.INVENTARIO) {
+            val app = context.applicationContext as android.app.Application
+            val vm: com.alushestore.viewmodel.InventarioViewModel = viewModel(
+                factory = com.alushestore.viewmodel.InventarioViewModelFactory(app, repository)
+            )
+            com.alushestore.ui.screens.inventario.InventarioScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() }
+            )
+        }
     }
+}
+
+/**
+ * ¿Hay internet de verdad, no sólo una red conectada?
+ *
+ * Se pide NET_CAPABILITY_VALIDATED a propósito: estar pegado al wifi del local
+ * no significa que salga tráfico. Sin esto el respaldo intentaría subir y se
+ * quedaría esperando hasta el timeout cada vez que se abre la app.
+ */
+private fun hayInternet(context: android.content.Context): Boolean {
+    val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager ?: return false
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+    return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }

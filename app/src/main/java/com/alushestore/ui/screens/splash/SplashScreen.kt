@@ -25,6 +25,13 @@ import com.alushestore.ui.theme.AlusheInk
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** Tope de espera para la coreografía de entrada antes de ceder el paso a Home */
+private const val ANIM_TIMEOUT_MS = 1200L
+
+/** Duración de la transición de fondo a crema antes de navegar */
+private const val BG_FADE_MS = 300L
 
 @Composable
 fun SplashScreen(onSplashComplete: () -> Unit) {
@@ -39,59 +46,62 @@ fun SplashScreen(onSplashComplete: () -> Unit) {
     var bgTransition by remember { mutableStateOf(false) }
     val bgColor by animateColorAsState(
         targetValue = if (bgTransition) AlusheCream else AlusheInk,
-        animationSpec = tween(durationMillis = 300),
-        label = "splash_bg",
-        finishedListener = { onSplashComplete() }
+        animationSpec = tween(durationMillis = BG_FADE_MS.toInt()),
+        label = "splash_bg"
     )
+
+    // La salida del splash nunca debe depender de que una animación termine:
+    // con las animaciones del sistema desactivadas jamás se completan y la app
+    // se quedaría atorada aquí para siempre.
+    val salidaDisparada = remember { mutableStateOf(false) }
 
     // ── Secuencia de animación ────────────────────────────────────────────────
     LaunchedEffect(Unit) {
 
-        // Fase 1 — logo entra con scale (overshoot) + fade, 600ms en paralelo
-        coroutineScope {
-            launch {
-                logoAlpha.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(durationMillis = 500)
-                )
-            }
-            launch {
-                logoScale.animateTo(
-                    targetValue = 1f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
+        // La coreografía es decorativa: si el dispositivo va lento o tiene las
+        // animaciones apagadas, se abandona al vencer el tope y se sigue de largo.
+        withTimeoutOrNull(ANIM_TIMEOUT_MS) {
+
+            // Fase 1 — logo entra con scale + fade rápido (260ms)
+            coroutineScope {
+                launch {
+                    logoAlpha.animateTo(
+                        targetValue = 1f,
+                        animationSpec = tween(durationMillis = 260)
                     )
-                )
+                }
+                launch {
+                    logoScale.animateTo(
+                        targetValue = 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                }
             }
+
+            // Fase 2 — punto verde pulsa elegantemente una sola vez (220ms)
+            coroutineScope {
+                launch { dotAlpha.animateTo(1f, tween(80)) }
+                launch { dotScale.animateTo(1.3f, tween(110)) }
+            }
+            dotScale.animateTo(0.9f, tween(110))
         }
 
-        delay(150)
+        // Si la coreografía se abandonó a medias, el logo se deja visible de golpe
+        // para que nunca se vea una pantalla vacía.
+        logoAlpha.snapTo(1f)
+        logoScale.snapTo(1f)
 
-        // Fase 2 — punto verde aparece y pulsa dos veces (latido), ~400ms c/u
-        coroutineScope {
-            launch { dotAlpha.animateTo(1f, tween(120)) }
-            launch { dotScale.animateTo(1f, tween(120)) }
-        }
-
-        // Latido 1
-        dotScale.animateTo(1.5f, tween(160))
-        dotScale.animateTo(0.85f, tween(160))
-        // Latido 2
-        dotScale.animateTo(1.5f, tween(160))
-        dotScale.animateTo(0.85f, tween(160))
-
-        // Punto desaparece
-        coroutineScope {
-            launch { dotAlpha.animateTo(0f, tween(200)) }
-            launch { dotScale.animateTo(0.3f, tween(200)) }
-        }
-
-        delay(80)
-
-        // Fase 3 — fondo hace fade a crema; onSplashComplete() se llama
-        // al terminar via finishedListener del animateColorAsState
+        // Fase 3 — transición ágil a crema y salida garantizada
         bgTransition = true
+        delay(BG_FADE_MS)
+
+        if (!salidaDisparada.value) {
+            salidaDisparada.value = true
+            onSplashComplete()
+        }
     }
 
     // ── UI ────────────────────────────────────────────────────────────────────

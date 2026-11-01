@@ -32,6 +32,7 @@ import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.EstadoApartado
 import com.alushestore.data.local.entities.TipoApartado
+import com.alushestore.domain.ProductoUnificado
 import com.alushestore.ui.components.*
 import com.alushestore.ui.theme.*
 import com.alushestore.viewmodel.ClienteDetalleViewModel
@@ -198,7 +199,7 @@ fun ClienteDetalleScreen(
                             item = item,
                             onEdit = { viewModel.abrirEditApartadoSheet(item.apartado) },
                             onDelete = { viewModel.eliminarApartado(item.apartado.id) },
-                            onEntregar = { viewModel.marcarEntregado(item.apartado.id) },
+                            onEntregar = { viewModel.marcarEntregado(item.apartado) },
                             onCancelar = { viewModel.marcarCancelado(item.apartado) },
                             onReactivar = { viewModel.reactivar(item.apartado) },
                             onAbonar = { viewModel.abrirAbonarSheet(item) },
@@ -230,10 +231,12 @@ private fun ClienteDetalleModals(
     val apartadoParaComprobante by viewModel.apartadoParaComprobante.collectAsStateWithLifecycle()
 
     if (showAddSheet) {
+        val catalogo by viewModel.productosCatalogo.collectAsStateWithLifecycle()
         ApartadoSheet(
+            catalogo = catalogo,
             onDismiss = { viewModel.cerrarAddApartadoSheet() },
-            onSave = { descripcion, monto, anticipo, notas, tipo ->
-                viewModel.agregarApartado(descripcion, monto, anticipo, notas, tipo)
+            onSaveConProducto = { descripcion, monto, anticipo, notas, tipo, producto ->
+                viewModel.agregarApartado(descripcion, monto, anticipo, notas, tipo, producto = producto)
                 viewModel.cerrarAddApartadoSheet()
             }
         )
@@ -659,13 +662,18 @@ private fun Monto(label: String, valor: String, color: Color, modifier: Modifier
 @Composable
 private fun ApartadoSheet(
     apartadoInicial: ApartadoEntity? = null,
+    /** Catálogo para apartar una pieza concreta. Vacío al editar. */
+    catalogo: List<ProductoUnificado> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (descripcion: String, monto: Double, anticipo: Double, notas: String, tipo: TipoApartado) -> Unit
+    onSave: (descripcion: String, monto: Double, anticipo: Double, notas: String, tipo: TipoApartado) -> Unit = { _, _, _, _, _ -> },
+    onSaveConProducto: ((String, Double, Double, String, TipoApartado, ProductoUnificado?) -> Unit)? = null
 ) {
     val esEdicion = apartadoInicial != null
     var tipo by remember { mutableStateOf(apartadoInicial?.tipo ?: TipoApartado.APARTADO) }
     var descripcion by remember { mutableStateOf(apartadoInicial?.descripcion ?: "") }
     var monto by remember { mutableStateOf(apartadoInicial?.monto?.toInputText() ?: "") }
+    var productoElegido by remember { mutableStateOf<ProductoUnificado?>(null) }
+    var buscarProducto by remember { mutableStateOf("") }
     var anticipo by remember {
         mutableStateOf(apartadoInicial?.anticipo?.takeIf { it > 0 }?.toInputText() ?: "")
     }
@@ -744,6 +752,95 @@ private fun ApartadoSheet(
                             selectedLabelColor = AlusheWhite
                         )
                     )
+                }
+            }
+
+            // Elegir del catálogo reserva la pieza de verdad. Se deja opcional
+            // a propósito: un pedido suele ser de algo que todavía no se tiene,
+            // y ahí sólo hace falta escribirlo.
+            if (!esEdicion && tipo == TipoApartado.APARTADO && catalogo.isNotEmpty()) {
+                val elegido = productoElegido
+                if (elegido != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(ShapeCard)
+                            .background(AlusheGreenSurface)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                elegido.nombre,
+                                fontFamily = Montserrat, fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp, color = AlusheInk,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                if (elegido.esCompartido) "Se reserva del almacén compartido"
+                                else "Se reserva de tu inventario",
+                                fontFamily = DmSans, fontSize = 11.sp, color = AlusheGreenDark
+                            )
+                        }
+                        TextButton(onClick = { productoElegido = null }) {
+                            Text("Quitar", fontFamily = Montserrat, fontSize = 12.sp, color = AlusheInkMid)
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = buscarProducto,
+                        onValueChange = { buscarProducto = it },
+                        label = { Text("Buscar en el catálogo (opcional)", fontFamily = Montserrat,
+                            fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
+                        placeholder = { Text("Para reservar la pieza", fontFamily = DmSans) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = ShapeCard,
+                        colors = fieldColors
+                    )
+
+                    val q = buscarProducto.trim().lowercase()
+                    if (q.length >= 2) {
+                        val encontrados = catalogo.filter { it.nombre.lowercase().contains(q) }.take(6)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            encontrados.forEach { p ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(ShapeCard)
+                                        .background(AlusheWhite)
+                                        .clickable {
+                                            productoElegido = p
+                                            descripcion = p.nombre
+                                            monto = p.precio.toInputText()
+                                            buscarProducto = ""
+                                            errorDescripcion = false
+                                            errorMonto = false
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        p.nombre,
+                                        fontFamily = Montserrat, fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp, color = AlusheInk,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        "${p.precio.toInputText()} · ${p.stockDisponible}",
+                                        fontFamily = DmSans, fontSize = 11.sp, color = AlusheGreenDark
+                                    )
+                                }
+                            }
+                            if (encontrados.isEmpty()) {
+                                Text(
+                                    "Nada con ese nombre. Puedes escribirlo a mano abajo.",
+                                    fontFamily = DmSans, fontSize = 11.sp, color = AlusheInkLight
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -831,7 +928,14 @@ private fun ApartadoSheet(
                         errorAnticipo = anticipoD == null || anticipoD < 0 ||
                             (montoD != null && anticipoD > montoD)
                         if (!errorDescripcion && !errorMonto && !errorAnticipo) {
-                            onSave(descripcion.trim(), montoD!!, anticipoD!!, notas.trim(), tipo)
+                            if (onSaveConProducto != null) {
+                                onSaveConProducto(
+                                    descripcion.trim(), montoD!!, anticipoD!!, notas.trim(), tipo,
+                                    productoElegido
+                                )
+                            } else {
+                                onSave(descripcion.trim(), montoD!!, anticipoD!!, notas.trim(), tipo)
+                            }
                         }
                     },
                     modifier = Modifier.weight(1f),

@@ -44,7 +44,10 @@ data class BaseEntity(
             onDelete = ForeignKey.CASCADE   // Si se borra la base, se borran sus ventas
         )
     ],
-    indices = [Index(value = ["baseId"])]
+    indices = [
+        Index(value = ["baseId"]),
+        Index(value = ["syncUuid"])
+    ]
 )
 data class VentaEntity(
     @PrimaryKey(autoGenerate = true)
@@ -66,5 +69,14 @@ data class VentaEntity(
     val categoria: String = "General",
 
     /** Notas opcionales */
-    val notas: String = ""
+    val notas: String = "",
+
+    /** Usuario/vendedor que registró la venta */
+    val vendedor: String = "PRINCIPAL",
+
+    /** Identificador global para sincronización distribuida */
+    val syncUuid: String? = null,
+
+    /** true si proviene del punto de venta con carrito desglosado */
+    val esVentaPos: Boolean = false
 )

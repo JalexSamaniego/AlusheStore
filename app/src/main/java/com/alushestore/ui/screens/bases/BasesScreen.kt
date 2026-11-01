@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -41,6 +42,7 @@ fun BasesScreen(
     onNavigateToEstadisticas: (Long) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val corteVisible by viewModel.corteVisible.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showNuevaBaseDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -102,11 +104,12 @@ fun BasesScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(AlusheInk)
+                    .statusBarsPadding()
                     .padding(horizontal = 4.dp, vertical = 8.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack, modifier = Modifier.bounce()) {
-                        Icon(Icons.Default.ArrowBack, "Regresar", tint = AlusheCream)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Regresar", tint = AlusheCream)
                     }
                     Image(
                         painter = androidx.compose.ui.res.painterResource(
@@ -234,7 +237,8 @@ fun BasesScreen(
                             onCerrar = {},
                             onRespaldar = { viewModel.respaldarBase(base.id) },
                             onEliminar = { viewModel.eliminarBase(base) },
-                            onVerEstadisticas = { onNavigateToEstadisticas(base.id) }
+                            onVerEstadisticas = { onNavigateToEstadisticas(base.id) },
+                            onVerCorte = { viewModel.verCorte(base.id) }
                         )
                     }
                 }
@@ -310,6 +314,13 @@ fun BasesScreen(
             }
         )
     }
+
+    corteVisible?.let { corte ->
+        CorteDialog(
+            corte = corte,
+            onDismiss = { viewModel.cerrarDialogoCorte() }
+        )
+    }
 }
 
 // ── BaseCard ──────────────────────────────────────────────────────────────────
@@ -321,7 +332,8 @@ fun BaseCard(
     onCerrar: () -> Unit,
     onRespaldar: () -> Unit,
     onEliminar: () -> Unit,
-    onVerEstadisticas: () -> Unit = {}
+    onVerEstadisticas: () -> Unit = {},
+    onVerCorte: () -> Unit = {}
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showCerrarDialog by remember { mutableStateOf(false) }
@@ -457,6 +469,21 @@ fun BaseCard(
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 "Cerrar",
+                                fontFamily = Montserrat,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    } else {
+                        TextButton(
+                            onClick = onVerCorte,
+                            colors = ButtonDefaults.textButtonColors(contentColor = AlusheInk)
+                        ) {
+                            Icon(Icons.Default.ReceiptLong, null,
+                                Modifier.size(15.dp), tint = AlusheGreenDark)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "Corte",
                                 fontFamily = Montserrat,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp

@@ -24,7 +24,11 @@ data class ClienteEntity(
         childColumns = ["clienteId"],
         onDelete = ForeignKey.CASCADE
     )],
-    indices = [Index(value = ["clienteId"])]
+    indices = [
+        Index(value = ["clienteId"]),
+        Index(value = ["syncUuid"]),
+        Index(value = ["productoId"])
+    ]
 )
 data class ApartadoEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -35,7 +39,18 @@ data class ApartadoEntity(
     val estado: EstadoApartado = EstadoApartado.PENDIENTE,
     val fecha: Long = System.currentTimeMillis(),
     val notas: String = "",
-    val tipo: TipoApartado = TipoApartado.APARTADO
+    val tipo: TipoApartado = TipoApartado.APARTADO,
+    val vendedor: String = "PRINCIPAL",
+    val syncUuid: String? = null,
+    val productoId: Long? = null,
+    /**
+     * Producto del catálogo compartido de alushe.store, cuando la pieza
+     * apartada no es de este teléfono. Excluyente con [productoId].
+     *
+     * La pieza ya salió del stock compartido al crear el apartado, para que no
+     * se la venda el otro teléfono. Si el apartado se cancela, se devuelve.
+     */
+    val productoRemotoId: Long? = null
 ) {
     /** Lo que falta por cobrar de este apartado */
     val saldo: Double get() = (monto - anticipo).coerceAtLeast(0.0)

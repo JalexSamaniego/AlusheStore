@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AlusheStore</string>
+
+    <!-- Shortcuts -->
+    <string name="shortcut_venta_short">Venta rápida</string>
+    <string name="shortcut_venta_long">Registrar venta rápida</string>
+    <string name="shortcut_pos_short">Escanear POS</string>
+    <string name="shortcut_pos_long">Escáner de código de barras POS</string>
+    <string name="shortcut_tianguis_short">Tianguis</string>
+    <string name="shortcut_tianguis_long">Abrir Modo Tianguis</string>
+
+    <!-- Widgets -->
+    <string name="widget_compact_name">Tira Rápida</string>
+    <string name="widget_compact_desc">Acceso rápido para registrar cobros y ver el total de hoy.</string>
+    <string name="widget_extended_name">Tablero Financiero</string>
+    <string name="widget_extended_desc">Tablero con base activa, métricas de hoy y accesos rápidos a POS y Tianguis.</string>
 </resources>

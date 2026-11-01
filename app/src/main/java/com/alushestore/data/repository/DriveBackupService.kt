@@ -13,6 +13,9 @@ import com.alushestore.data.local.entities.AbonoEntity
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.BaseEntity
 import com.alushestore.data.local.entities.ClienteEntity
+import com.alushestore.data.local.entities.DetalleVentaEntity
+import com.alushestore.data.local.entities.LoteEntity
+import com.alushestore.data.local.entities.ProductoEntity
 import com.alushestore.data.local.entities.VentaEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,11 +24,12 @@ import kotlinx.coroutines.withContext
 data class BaseBackup(
     val base: BaseEntity,
     val ventas: List<VentaEntity>,
+    val detallesVenta: List<DetalleVentaEntity> = emptyList(),
     val totalMonto: Double,
     val cantidadVentas: Int,
     val exportadoEn: Long = System.currentTimeMillis(),
-    val appVersion: String = "1.0.0",
-    val schemaVersion: Int = 4,
+    val appVersion: String = "1.5.2",
+    val schemaVersion: Int = 5,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -38,8 +42,22 @@ data class ClientesBackup(
     val totalApartados: Int,
     val saldoPendiente: Double,
     val exportadoEn: Long = System.currentTimeMillis(),
-    val appVersion: String = "1.0.0",
-    val schemaVersion: Int = 4,
+    val appVersion: String = "1.5.2",
+    val schemaVersion: Int = 5,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/** Respaldo consolidado de catálogo e inventario (un solo archivo en Drive) */
+data class InventarioBackup(
+    val lotes: List<LoteEntity> = emptyList(),
+    val productos: List<ProductoEntity> = emptyList(),
+    val totalLotes: Int = lotes.size,
+    val totalProductos: Int = productos.size,
+    val totalStock: Int = productos.sumOf { it.stockTotal },
+    val valorInventario: Double = productos.sumOf { it.costoUnitario * it.stockDisponible },
+    val exportadoEn: Long = System.currentTimeMillis(),
+    val appVersion: String = "1.5.2",
+    val schemaVersion: Int = 5,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -66,7 +84,11 @@ class DriveBackupService(
      * Sube o actualiza el respaldo de una base en Google Drive.
      * Retorna el ID del archivo en Drive.
      */
-    suspend fun subirBase(base: BaseEntity, ventas: List<VentaEntity>): Result<String> =
+    suspend fun subirBase(
+        base: BaseEntity,
+        ventas: List<VentaEntity>,
+        detallesVenta: List<DetalleVentaEntity> = emptyList()
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             try {
                 val drive = buildDriveService()
@@ -75,6 +97,7 @@ class DriveBackupService(
                 val backup = BaseBackup(
                     base = base,
                     ventas = ventas,
+                    detallesVenta = detallesVenta,
                     totalMonto = ventas.sumOf { it.monto },
                     cantidadVentas = ventas.size
                 )
@@ -213,6 +236,71 @@ class DriveBackupService(
             }
         }
 
+    /**
+     * Sube o actualiza el respaldo consolidado del inventario (lotes y catálogo de productos).
+     */
+    suspend fun subirInventario(backup: InventarioBackup): Result<String> =
+        withContext(Dispatchers.IO) {
+            try {
+                val drive = buildDriveService()
+                val folderId = obtenerOCrearCarpeta(drive)
+
+                val jsonContent = gson.toJson(backup)
+                val byteContent = ByteArrayContent.fromString("application/json", jsonContent)
+
+                val existente = drive.files().list()
+                    .setQ("name = '$INVENTARIO_FILE_NAME' and '$folderId' in parents and trashed = false")
+                    .setFields("files(id)")
+                    .execute()
+                    .files
+                    .firstOrNull()
+
+                if (existente != null) {
+                    drive.files().update(existente.id, null, byteContent).execute()
+                    Result.success(existente.id)
+                } else {
+                    val metadata = File().apply {
+                        name = INVENTARIO_FILE_NAME
+                        parents = listOf(folderId)
+                        mimeType = "application/json"
+                    }
+                    val file = drive.files().create(metadata, byteContent)
+                        .setFields("id")
+                        .execute()
+                    Result.success(file.id)
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Descarga el respaldo consolidado del inventario desde Drive.
+     */
+    suspend fun descargarInventario(): Result<InventarioBackup> =
+        withContext(Dispatchers.IO) {
+            try {
+                val drive = buildDriveService()
+                val folderId = obtenerOCrearCarpeta(drive)
+
+                val existente = drive.files().list()
+                    .setQ("name = '$INVENTARIO_FILE_NAME' and '$folderId' in parents and trashed = false")
+                    .setFields("files(id)")
+                    .execute()
+                    .files
+                    .firstOrNull()
+                    ?: return@withContext Result.failure(Exception("No se encontró el respaldo de inventario en Drive"))
+
+                val outputStream = java.io.ByteArrayOutputStream()
+                drive.files().get(existente.id).executeMediaAndDownloadTo(outputStream)
+                val json = outputStream.toString("UTF-8")
+                val backup = gson.fromJson(json, InventarioBackup::class.java)
+                Result.success(backup)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** Obtiene o crea la carpeta "AlusheStore" en Drive */
     private fun obtenerOCrearCarpeta(drive: Drive): String {
         val query = "name = '$appFolderName' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
@@ -231,6 +319,7 @@ class DriveBackupService(
 
     companion object {
         const val CLIENTES_FILE_NAME = "clientes_alushe.json"
+        const val INVENTARIO_FILE_NAME = "inventario_alushe.json"
     }
 }
 

@@ -85,6 +85,9 @@ interface ApartadoDao {
     @Transaction
     @Query("SELECT * FROM apartados WHERE id = :id")
     suspend fun getApartadoConAbonosById(id: Long): ApartadoConAbonos?
+
+    @Query("SELECT * FROM apartados WHERE id = :id")
+    suspend fun getApartadoByIdSync(id: Long): ApartadoEntity?
 }
 
 // ── AbonoDao ──────────────────────────────────────────────────────────────────
