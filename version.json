@@ -1,8 +1,8 @@
 {
-  "versionCode": 7,
-  "versionName": "2.0.1",
-  "titulo": "Actualización v2.0.1 disponible",
-  "notas": "• Eliminar un apartado o un cliente ahora devuelve la pieza al stock\n• La lista de respaldos de Drive ya no muestra el archivo de inventario (abrirlo cerraba la app)\n• El respaldo de cada base incluye los costos, y restaurarla ya no borra el corte ni ventas\n• Los abonos de un apartado descuentan su parte del costo: la utilidad ya no sale inflada\n• Ajustes internos de estabilidad",
+  "versionCode": 8,
+  "versionName": "2.1.0",
+  "titulo": "Actualización v2.1.0 disponible",
+  "notas": "• Método de pago al cobrar: efectivo, transferencia o tarjeta\n• Caja del día: toca \"Hoy\" para ver cuánto efectivo debe haber en caja\n• Compartir catálogo por WhatsApp como imagen con fotos o como texto\n• Exportar ventas, cortes e inventario a Excel, y el corte a PDF\n• Meta del mes con barra de avance en la pantalla principal y el widget",
   "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk",
-  "sha256": "6f712e42a699d1fe1c70d552a3719382170dae3cbe653cfd2fa50d6801208f3a"
+  "sha256": "97facb96c27f6bfa1452ec59fe50160a1d5e0e90ae541d3bb52e05aa04a8bb81"
 }
