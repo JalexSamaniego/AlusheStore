@@ -1,8 +1,8 @@
 {
-  "versionCode": 6,
-  "versionName": "2.0.0",
-  "titulo": "Actualización v2.0.0 disponible",
-  "notas": "• Inventario y punto de venta: catálogo, stock, lotes y escáner de código de barras\n• Almacén compartido con alushe.store: el stock es el mismo en los dos teléfonos y en la tienda\n• Sigue funcionando sin internet: la venta nunca se detiene y el descuento se manda solo al volver la señal\n• Corte mensual con utilidad por vendedor\n• Perfiles Dulce y Alejandro, cada quien queda registrado en su venta\n• Respaldo automático en Drive al abrir la app\n• Arranque corregido: ya no se queda en la pantalla negra\n• Cancelar un apartado ahora sí devuelve la pieza al stock",
+  "versionCode": 7,
+  "versionName": "2.0.1",
+  "titulo": "Actualización v2.0.1 disponible",
+  "notas": "• Eliminar un apartado o un cliente ahora devuelve la pieza al stock\n• La lista de respaldos de Drive ya no muestra el archivo de inventario (abrirlo cerraba la app)\n• El respaldo de cada base incluye los costos, y restaurarla ya no borra el corte ni ventas\n• Los abonos de un apartado descuentan su parte del costo: la utilidad ya no sale inflada\n• Ajustes internos de estabilidad",
   "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk",
-  "sha256": "c4d2fdc06a874d05d54987441a9e6cd941aa8c6179bc86506d01753909bc6d5b"
+  "sha256": "6f712e42a699d1fe1c70d552a3719382170dae3cbe653cfd2fa50d6801208f3a"
 }
