@@ -50,7 +50,14 @@ data class ApartadoEntity(
      * La pieza ya salió del stock compartido al crear el apartado, para que no
      * se la venda el otro teléfono. Si el apartado se cancela, se devuelve.
      */
-    val productoRemotoId: Long? = null
+    val productoRemotoId: Long? = null,
+    /**
+     * Costo de la pieza congelado al apartarla, igual que hace el POS con
+     * [DetalleVentaEntity.costoUnitarioHistorico]. Con esto cada abono que
+     * entra a una base descuenta su parte del costo y la utilidad no sale
+     * inflada. null en pedidos y en apartados sin producto.
+     */
+    val costoUnitario: Double? = null
 ) {
     /** Lo que falta por cobrar de este apartado */
     val saldo: Double get() = (monto - anticipo).coerceAtLeast(0.0)

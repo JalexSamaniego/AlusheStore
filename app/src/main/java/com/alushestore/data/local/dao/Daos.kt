@@ -81,6 +81,10 @@ interface VentaDao {
     @Query("DELETE FROM ventas WHERE id = :id")
     suspend fun deleteVentaById(id: Long)
 
+    /** Ids que ya están ocupados, para no pisar ventas ajenas al importar un respaldo */
+    @Query("SELECT id FROM ventas WHERE id IN (:ids)")
+    suspend fun getIdsExistentes(ids: List<Long>): List<Long>
+
     @Query("SELECT * FROM ventas WHERE baseId = :baseId AND fecha >= :hoyInicio AND fecha <= :hoyFin")
     fun getVentasHoy(baseId: Long, hoyInicio: Long, hoyFin: Long): Flow<List<VentaEntity>>
 }

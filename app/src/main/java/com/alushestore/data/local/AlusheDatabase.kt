@@ -292,6 +292,19 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+/**
+ * Costo congelado del apartado, para que los abonos descuenten su parte del
+ * costo en la utilidad.
+ *
+ * Aditiva: no toca ni una fila existente, ni de `apartados` ni de `productos`.
+ * Los apartados viejos quedan en NULL y se tratan como antes.
+ */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `apartados` ADD COLUMN `costoUnitario` REAL DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         BaseEntity::class,
@@ -308,7 +321,7 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         CorteVendedorEntity::class,
         MovimientoPendienteEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AlusheDatabase : RoomDatabase() {
@@ -348,7 +361,8 @@ abstract class AlusheDatabase : RoomDatabase() {
                 )
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                    MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                    MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                    MIGRATION_8_9
                 )
                 // SIN fallbackToDestructiveMigration, a propósito.
                 //

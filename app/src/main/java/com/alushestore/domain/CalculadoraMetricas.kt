@@ -39,6 +39,25 @@ object CalculadoraMetricas {
         detalles.filter { it.ventaId in ventaIds }
             .sumOf { it.costoUnitarioHistorico * it.cantidad }
 
+    /**
+     * Parte del costo de una pieza apartada que le toca a un abono.
+     *
+     * Cada abono que entra a una base carga la proporción del costo que cubre,
+     * para que la suma de todos dé exactamente el costo de la pieza, igual que
+     * si se hubiera vendido de una vez en el POS. Lo pagado de más sobre el
+     * saldo no carga costo, porque la pieza ya quedó cubierta.
+     *
+     * @return null si no hay costo que cargar (pieza sin costo conocido,
+     *         apartado de $0 o abono que no cubre nada del saldo).
+     */
+    fun costoDeAbono(costoPieza: Double?, montoApartado: Double, abono: Double, saldoAntes: Double): Double? {
+        val costo = costoPieza?.takeIf { it > 0.0 } ?: return null
+        if (montoApartado <= 0.0) return null
+        val cubierto = abono.coerceAtMost(saldoAntes).coerceAtLeast(0.0)
+        if (cubierto <= 0.0) return null
+        return costo * cubierto / montoApartado
+    }
+
     /** Margen sobre costo, en porcentaje entero. */
     fun margenSobreCosto(totalBruto: Double, costo: Double, utilidad: Double): Int =
         if (costo > 0.0) ((utilidad / costo) * 100).toInt() else if (totalBruto > 0) 100 else 0

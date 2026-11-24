@@ -164,8 +164,12 @@ class DriveBackupService(
         }
 
     /**
-     * Lista todos los respaldos de bases disponibles en Drive
-     * (el archivo de clientes tiene otro formato y se excluye).
+     * Lista los respaldos de **bases** disponibles en Drive.
+     *
+     * En la misma carpeta viven también `clientes_alushe.json` e
+     * `inventario_alushe.json`, que tienen otro formato. Antes sólo se excluía
+     * el de clientes, y abrir el de inventario como si fuera una base tumbaba
+     * la app. Ahora se listan únicamente los que `subirBase` nombra `base_…`.
      */
     suspend fun listarRespaldos(): Result<List<DriveBackupInfo>> =
         withContext(Dispatchers.IO) {
@@ -178,7 +182,7 @@ class DriveBackupService(
                     .setFields("files(id, name, modifiedTime, size)")
                     .execute()
 
-                val backups = result.files.filter { it.name != CLIENTES_FILE_NAME }.map { file ->
+                val backups = result.files.filter { it.name.orEmpty().startsWith(PREFIJO_BASE) }.map { file ->
                     DriveBackupInfo(
                         fileId = file.id,
                         nombre = file.name,
@@ -202,7 +206,13 @@ class DriveBackupService(
                 val outputStream = java.io.ByteArrayOutputStream()
                 drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
                 val json = outputStream.toString("UTF-8")
-                val backup = gson.fromJson(json, BaseBackup::class.java)
+                // Gson no respeta la nulabilidad de Kotlin: si el archivo no es
+                // de una base, `base` llega null aunque el tipo diga que no.
+                val backup: BaseBackup? = gson.fromJson(json, BaseBackup::class.java)
+                @Suppress("SENSELESS_COMPARISON")
+                if (backup == null || backup.base == null || backup.ventas == null) {
+                    return@withContext Result.failure(Exception("Ese archivo no es un respaldo de base"))
+                }
                 Result.success(backup)
             } catch (e: Exception) {
                 Result.failure(e)
@@ -320,6 +330,7 @@ class DriveBackupService(
     companion object {
         const val CLIENTES_FILE_NAME = "clientes_alushe.json"
         const val INVENTARIO_FILE_NAME = "inventario_alushe.json"
+        private const val PREFIJO_BASE = "base_"
     }
 }
 

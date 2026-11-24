@@ -1,7 +1,10 @@
 package com.alushestore.data.repository
 
+import androidx.room.withTransaction
 import com.alushestore.data.local.AlusheDatabase
+import com.alushestore.data.local.entities.DetalleVentaEntity
 import com.alushestore.data.local.entities.EstadoApartado
+import com.alushestore.data.local.entities.VentaEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,8 +44,11 @@ class BackupRepository(
         val base = db.baseDao().getBaseById(baseId)
             ?: return Result.failure(Exception("Base no encontrada"))
         val ventas = db.ventaDao().getVentasByBaseSync(baseId)
+        // Sin los detalles, una base restaurada perdía el costo congelado de
+        // cada venta del POS y su utilidad salía como si todo fuera ganancia.
+        val detalles = db.inventarioDao().getDetallesByBaseSync(baseId)
 
-        val result = drive.subirBase(base, ventas)
+        val result = drive.subirBase(base, ventas, detalles)
         if (result.isSuccess) {
             db.baseDao().updateDriveFileId(baseId, result.getOrThrow())
         }
@@ -100,13 +106,92 @@ class BackupRepository(
         return drive.descargarRespaldo(fileId)
     }
 
-    suspend fun importarBase(backup: BaseBackup) {
-        val baseImportada = backup.base.copy(cerrada = true)
-        db.baseDao().insertBase(baseImportada)
-        val ventasViejas = db.ventaDao().getVentasByBaseSync(baseImportada.id)
-        ventasViejas.forEach { db.ventaDao().deleteVentaById(it.id) }
-        backup.ventas.forEach { db.ventaDao().insertVenta(it) }
+    /**
+     * Trae a este teléfono una base respaldada en Drive.
+     *
+     * Antes se hacía con `INSERT OR REPLACE`, y eso tenía tres problemas:
+     * - REPLACE borra la fila vieja, y la cascada se llevaba el **corte** de
+     *   esa base.
+     * - Las ventas se insertaban con su id original: en otro teléfono ese id
+     *   podía ser de una venta de otra base, y la **pisaba**.
+     * - Los detalles con costo no viajaban, así que la utilidad salía mal.
+     *
+     * Ahora nada de lo que ya está en el teléfono se borra ni se reescribe:
+     * - Si es la misma base (mismo id y misma fecha de creación), sólo se
+     *   agregan las ventas del respaldo que aquí no están. La base, su estado
+     *   (activa o cerrada), su corte y sus ventas locales quedan intactos.
+     * - Si no existe, se crea cerrada; si su id lo ocupa otra base, entra con
+     *   id nuevo.
+     * Las ventas conservan su id sólo si está libre, y los detalles se
+     * reenlazan a las ventas que de verdad se insertaron.
+     *
+     * No toca la tabla de productos: un detalle cuyo producto no existe en
+     * este teléfono se guarda sin enlace, con su costo y su nombre.
+     */
+    suspend fun importarBase(backup: BaseBackup) = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            val original = backup.base
+            val local = db.baseDao().getBaseById(original.id)
+            val esLaMisma = local != null && local.fechaCreacion == original.fechaCreacion
+
+            // Un respaldo viejo no trae detalles (Gson los deja en null)
+            val detallesRespaldo: List<DetalleVentaEntity> =
+                (backup.detallesVenta as List<DetalleVentaEntity>?).orEmpty()
+
+            when {
+                esLaMisma -> {
+                    val yaEstan = db.ventaDao().getVentasByBaseSync(original.id).map { it.id }.toSet()
+                    insertarVentasYDetalles(
+                        backup.ventas.filter { it.id !in yaEstan },
+                        original.id,
+                        detallesRespaldo
+                    )
+                }
+                local == null -> {
+                    val id = db.baseDao().insertBase(original.copy(cerrada = true))
+                    insertarVentasYDetalles(backup.ventas, id, detallesRespaldo)
+                }
+                else -> {
+                    // El id está ocupado por otra base: ésta entra con id nuevo
+                    val id = db.baseDao().insertBase(original.copy(id = 0, cerrada = true, driveFileId = null))
+                    insertarVentasYDetalles(backup.ventas, id, detallesRespaldo)
+                }
+            }
+        }
         ejecutarWalCheckpoint()
+    }
+
+    private suspend fun insertarVentasYDetalles(
+        ventas: List<VentaEntity>,
+        baseId: Long,
+        detalles: List<DetalleVentaEntity>
+    ) {
+        if (ventas.isEmpty()) return
+
+        val ocupados = ventas.map { it.id }.chunked(500)
+            .flatMap { db.ventaDao().getIdsExistentes(it) }.toSet()
+
+        // Sólo las que se insertan: los detalles de las demás ya están aquí
+        val idNuevo = mutableMapOf<Long, Long>()
+        for (v in ventas) {
+            val id = if (v.id in ocupados) 0L else v.id
+            idNuevo[v.id] = db.ventaDao().insertVenta(v.copy(id = id, baseId = baseId))
+        }
+
+        val productosIds = detalles.mapNotNull { it.productoId }.distinct()
+        val existentes = productosIds.chunked(500)
+            .flatMap { db.inventarioDao().getProductoIdsExistentes(it) }.toSet()
+
+        for (d in detalles) {
+            val ventaId = idNuevo[d.ventaId] ?: continue
+            db.inventarioDao().insertDetalleVenta(
+                d.copy(
+                    id = 0,
+                    ventaId = ventaId,
+                    productoId = d.productoId?.takeIf { it in existentes }
+                )
+            )
+        }
     }
 
     // ── Respaldo de Clientes, Apartados y Abonos ──────────────────────────────

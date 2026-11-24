@@ -164,9 +164,13 @@ class BasesViewModel(private val repository: AlusheRepository) : ViewModel() {
     fun importarBaseLocal() {
         val backup = _uiState.value.baseDescargada ?: return
         viewModelScope.launch {
-            repository.importarBase(backup)
+            try {
+                repository.importarBase(backup)
+                mostrarMensaje("Base importada correctamente ✓")
+            } catch (e: Exception) {
+                mostrarMensaje("No se pudo importar: ${e.message}")
+            }
             cerrarDetalleDrive()
-            mostrarMensaje("Base importada correctamente ✓")
         }
     }
 

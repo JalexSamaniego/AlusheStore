@@ -48,6 +48,9 @@ interface ApartadoDao {
     @Query("SELECT * FROM apartados ORDER BY fecha DESC")
     suspend fun getAllApartadosSync(): List<ApartadoEntity>
 
+    @Query("SELECT * FROM apartados WHERE clienteId = :clienteId")
+    suspend fun getApartadosByClienteSync(clienteId: Long): List<ApartadoEntity>
+
     @Query("SELECT SUM(monto - anticipo) FROM apartados WHERE clienteId = :clienteId AND estado = 'PENDIENTE'")
     fun getSaldoPendienteByCliente(clienteId: Long): Flow<Double?>
 

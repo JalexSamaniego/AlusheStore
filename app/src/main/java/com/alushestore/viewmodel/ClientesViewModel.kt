@@ -262,7 +262,8 @@ class ClienteDetalleViewModel(
                             monto = monto,
                             anticipo = anticipo,
                             vendedor = repository.vendedorActivo,
-                            notas = notas
+                            notas = notas,
+                            costoUnitario = producto.costo
                         )
                         cargarCatalogoWeb()
                         if (r.almacen is ResultadoMovimiento.Encolado) {
@@ -297,8 +298,16 @@ class ClienteDetalleViewModel(
 
     fun eliminarApartado(apartadoId: Long) {
         viewModelScope.launch {
-            repository.eliminarApartado(apartadoId)
-            mostrarMensaje("Eliminado")
+            val r = repository.clientes.eliminarApartado(apartadoId)
+            mostrarMensaje(
+                when (r) {
+                    is ResultadoMovimiento.Encolado ->
+                        "Eliminado — la pieza vuelve al almacén al volver el internet"
+                    is ResultadoMovimiento.Rechazado ->
+                        "Eliminado, pero el almacén no aceptó la pieza de vuelta: ${r.motivo}. Revisa el stock en Inventario"
+                    else -> "Eliminado"
+                }
+            )
         }
     }
 

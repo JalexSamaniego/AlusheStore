@@ -1,14 +1,17 @@
 package com.alushestore.data.repository
 
+import androidx.room.withTransaction
 import com.alushestore.data.local.AlusheDatabase
 import com.alushestore.data.local.entities.AbonoEntity
 import com.alushestore.data.local.entities.ApartadoConAbonos
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.ClienteResumen
+import com.alushestore.data.local.entities.DetalleVentaEntity
 import com.alushestore.data.local.entities.EstadoApartado
 import com.alushestore.data.local.entities.TipoApartado
 import com.alushestore.data.local.entities.VentaEntity
+import com.alushestore.domain.CalculadoraMetricas
 import kotlinx.coroutines.flow.Flow
 
 class ClientesRepository(
@@ -39,7 +42,16 @@ class ClientesRepository(
         backupRepository?.programarRespaldoClientes()
     }
 
+    /**
+     * Borra al cliente con todos sus apartados (cascada de Room).
+     *
+     * Antes, las piezas que esos apartados tenían reservadas se quedaban
+     * apartadas para siempre. Ahora se devuelven primero, igual que al
+     * cancelar.
+     */
     suspend fun eliminarCliente(cliente: ClienteEntity) {
+        db.apartadoDao().getApartadosByClienteSync(cliente.id)
+            .forEach { liberarPiezaSiPendiente(it, "Cliente eliminado") }
         db.clienteDao().deleteCliente(cliente)
         backupRepository?.programarRespaldoClientes()
     }
@@ -72,40 +84,45 @@ class ClientesRepository(
         vendedor: String = "PRINCIPAL"
     ): Long {
         val fecha = System.currentTimeMillis()
-        val id = db.apartadoDao().insertApartado(
-            ApartadoEntity(
-                clienteId = clienteId,
-                descripcion = descripcion,
-                monto = monto,
-                anticipo = anticipo,
-                notas = notas,
-                tipo = tipo,
-                fecha = fecha,
-                vendedor = vendedor
-            )
+        val apartado = ApartadoEntity(
+            clienteId = clienteId,
+            descripcion = descripcion,
+            monto = monto,
+            anticipo = anticipo,
+            notas = notas,
+            tipo = tipo,
+            fecha = fecha,
+            vendedor = vendedor
         )
 
-        if (anticipo > 0) {
-            db.abonoDao().insertAbono(
-                AbonoEntity(
-                    apartadoId = id,
-                    baseId = baseId,
-                    monto = anticipo,
-                    fecha = fecha,
-                    nota = "Anticipo inicial"
-                )
-            )
+        // Todo o nada: un apartado sin su anticipo, o un anticipo sin su venta
+        // en la base, descuadra las cuentas.
+        val id = db.withTransaction {
+            val nuevoId = db.apartadoDao().insertApartado(apartado)
 
-            if (baseId != null) {
-                val desc = "Anticipo: $descripcion"
-                if (basesVentasRepository != null) {
-                    basesVentasRepository.agregarVenta(baseId, desc, anticipo, "", fecha)
-                } else {
-                    db.ventaDao().insertVenta(
-                        VentaEntity(baseId = baseId, articulo = desc, monto = anticipo, fecha = fecha)
+            if (anticipo > 0) {
+                db.abonoDao().insertAbono(
+                    AbonoEntity(
+                        apartadoId = nuevoId,
+                        baseId = baseId,
+                        monto = anticipo,
+                        fecha = fecha,
+                        nota = "Anticipo inicial"
+                    )
+                )
+
+                if (baseId != null) {
+                    registrarIngresoEnBase(
+                        apartado = apartado.copy(id = nuevoId),
+                        baseId = baseId,
+                        monto = anticipo,
+                        saldoAntes = monto,
+                        fecha = fecha,
+                        articulo = "Anticipo: $descripcion"
                     )
                 }
             }
+            nuevoId
         }
 
         backupRepository?.programarRespaldoClientes()
@@ -134,7 +151,8 @@ class ClientesRepository(
         monto: Double,
         anticipo: Double,
         vendedor: String,
-        notas: String = ""
+        notas: String = "",
+        costoUnitario: Double? = null
     ): ApartadoCompartido {
         val salida = almacen?.sacar(
             productoRemotoId = productoRemotoId,
@@ -148,24 +166,28 @@ class ClientesRepository(
             throw IllegalStateException(salida.motivo)
         }
 
-        val apartadoId = db.apartadoDao().insertApartado(
-            ApartadoEntity(
-                clienteId = clienteId,
-                descripcion = descripcion,
-                monto = monto,
-                anticipo = anticipo,
-                estado = EstadoApartado.PENDIENTE,
-                vendedor = vendedor,
-                notas = notas.trim(),
-                tipo = TipoApartado.APARTADO,
-                productoRemotoId = productoRemotoId
+        val apartadoId = db.withTransaction {
+            val nuevoId = db.apartadoDao().insertApartado(
+                ApartadoEntity(
+                    clienteId = clienteId,
+                    descripcion = descripcion,
+                    monto = monto,
+                    anticipo = anticipo,
+                    estado = EstadoApartado.PENDIENTE,
+                    vendedor = vendedor,
+                    notas = notas.trim(),
+                    tipo = TipoApartado.APARTADO,
+                    productoRemotoId = productoRemotoId,
+                    costoUnitario = costoUnitario?.takeIf { it > 0.0 }
+                )
             )
-        )
 
-        if (anticipo > 0) {
-            db.abonoDao().insertAbono(
-                AbonoEntity(apartadoId = apartadoId, monto = anticipo, nota = "Anticipo inicial")
-            )
+            if (anticipo > 0) {
+                db.abonoDao().insertAbono(
+                    AbonoEntity(apartadoId = nuevoId, monto = anticipo, nota = "Anticipo inicial")
+                )
+            }
+            nuevoId
         }
 
         backupRepository?.programarRespaldoClientes()
@@ -177,9 +199,38 @@ class ClientesRepository(
         backupRepository?.programarRespaldoClientes()
     }
 
-    suspend fun eliminarApartado(apartadoId: Long) {
+    /**
+     * Borra el apartado devolviendo antes la pieza que tenía reservada.
+     *
+     * Antes sólo borraba la fila: si el apartado seguía pendiente, la pieza
+     * se quedaba apartada en el teléfono (o fuera del almacén compartido)
+     * para siempre. Es el mismo error que tenía cancelar.
+     */
+    suspend fun eliminarApartado(apartadoId: Long): ResultadoMovimiento? {
+        val apartado = db.apartadoDao().getApartadoByIdSync(apartadoId)
+        val resultado = apartado?.let { liberarPiezaSiPendiente(it, "Apartado eliminado") }
         db.apartadoDao().deleteApartadoById(apartadoId)
         backupRepository?.programarRespaldoClientes()
+        return resultado
+    }
+
+    /**
+     * Devuelve la pieza de un apartado que sigue pendiente.
+     *
+     * Un entregado ya se la llevó el cliente y un cancelado ya la devolvió,
+     * así que en esos casos no se mueve nada.
+     */
+    private suspend fun liberarPiezaSiPendiente(
+        apartado: ApartadoEntity,
+        motivo: String
+    ): ResultadoMovimiento? {
+        if (apartado.estado != EstadoApartado.PENDIENTE) return null
+
+        apartado.productoId?.let { db.inventarioDao().liberarStockApartado(it, 1) }
+
+        return apartado.productoRemotoId?.let {
+            almacen?.devolver(it, apartado.descripcion, 1, apartado.vendedor, motivo)
+        }
     }
 
     suspend fun marcarApartadoEntregado(apartadoId: Long) {
@@ -255,39 +306,98 @@ class ClientesRepository(
         baseId: Long? = null,
         fecha: Long = System.currentTimeMillis()
     ): Long {
-        val id = db.abonoDao().insertAbono(
-            AbonoEntity(
-                apartadoId = apartadoId,
-                baseId = baseId,
-                monto = monto,
-                fecha = fecha,
-                nota = nota.trim()
-            )
-        )
+        val id = db.withTransaction {
+            val apartado = db.apartadoDao().getApartadoByIdSync(apartadoId)
+            val abonadoAntes = db.abonoDao().getTotalAbonadoByApartado(apartadoId) ?: 0.0
 
-        val totalAbonado = db.abonoDao().getTotalAbonadoByApartado(apartadoId) ?: 0.0
-        db.apartadoDao().updateAnticipo(apartadoId, totalAbonado)
-
-        if (baseId != null) {
-            val apartado = db.apartadoDao().getAllApartadosSync().find { it.id == apartadoId }
-            val desc = "Abono: ${apartado?.descripcion ?: "Apartado"}${if (nota.isNotBlank()) " ($nota)" else ""}"
-            if (basesVentasRepository != null) {
-                basesVentasRepository.agregarVenta(baseId, desc, monto, "", fecha)
-            } else {
-                db.ventaDao().insertVenta(
-                    VentaEntity(baseId = baseId, articulo = desc, monto = monto, fecha = fecha)
+            val nuevoId = db.abonoDao().insertAbono(
+                AbonoEntity(
+                    apartadoId = apartadoId,
+                    baseId = baseId,
+                    monto = monto,
+                    fecha = fecha,
+                    nota = nota.trim()
                 )
+            )
+
+            db.apartadoDao().updateAnticipo(apartadoId, abonadoAntes + monto)
+
+            if (baseId != null) {
+                val desc = "Abono: ${apartado?.descripcion ?: "Apartado"}${if (nota.isNotBlank()) " ($nota)" else ""}"
+                if (apartado != null) {
+                    registrarIngresoEnBase(
+                        apartado = apartado,
+                        baseId = baseId,
+                        monto = monto,
+                        saldoAntes = apartado.monto - abonadoAntes,
+                        fecha = fecha,
+                        articulo = desc
+                    )
+                } else {
+                    agregarVentaEnBase(baseId, desc, monto, fecha)
+                }
             }
+            nuevoId
         }
 
         backupRepository?.programarRespaldoClientes()
         return id
     }
 
+    /**
+     * Mete a la base el dinero que entró por un apartado y, si se conoce el
+     * costo de la pieza, la parte proporcional de ese costo.
+     *
+     * Sin el costo, cada abono contaba como utilidad del 100% y la utilidad de
+     * los apartados salía inflada. Con él, los abonos de una pieza suman al
+     * final exactamente su costo, igual que si se hubiera vendido en el POS.
+     *
+     * Lo que se pague de más sobre el saldo no lleva costo: la pieza ya quedó
+     * cubierta. Sólo lee el costo del producto; nunca lo modifica.
+     */
+    private suspend fun registrarIngresoEnBase(
+        apartado: ApartadoEntity,
+        baseId: Long,
+        monto: Double,
+        saldoAntes: Double,
+        fecha: Long,
+        articulo: String
+    ) {
+        val ventaId = agregarVentaEnBase(baseId, articulo, monto, fecha)
+
+        val local = apartado.productoId?.let { db.inventarioDao().getProductoByIdSync(it) }
+        val costoParte = CalculadoraMetricas.costoDeAbono(
+            costoPieza = apartado.costoUnitario ?: local?.costoUnitario,
+            montoApartado = apartado.monto,
+            abono = monto,
+            saldoAntes = saldoAntes
+        ) ?: return
+
+        db.inventarioDao().insertDetalleVenta(
+            DetalleVentaEntity(
+                ventaId = ventaId,
+                // Sólo si el producto sigue existiendo: la llave foránea lo exige
+                productoId = local?.id,
+                nombreProductoSnapshot = apartado.descripcion,
+                cantidad = 1,
+                costoUnitarioHistorico = costoParte,
+                precioUnitarioFinal = monto
+            )
+        )
+    }
+
+    private suspend fun agregarVentaEnBase(baseId: Long, articulo: String, monto: Double, fecha: Long): Long =
+        basesVentasRepository?.agregarVenta(baseId, articulo, monto, "", fecha)
+            ?: db.ventaDao().insertVenta(
+                VentaEntity(baseId = baseId, articulo = articulo, monto = monto, fecha = fecha)
+            )
+
     suspend fun eliminarAbono(abono: AbonoEntity) {
-        db.abonoDao().deleteAbono(abono)
-        val totalAbonado = db.abonoDao().getTotalAbonadoByApartado(abono.apartadoId) ?: 0.0
-        db.apartadoDao().updateAnticipo(abono.apartadoId, totalAbonado)
+        db.withTransaction {
+            db.abonoDao().deleteAbono(abono)
+            val totalAbonado = db.abonoDao().getTotalAbonadoByApartado(abono.apartadoId) ?: 0.0
+            db.apartadoDao().updateAnticipo(abono.apartadoId, totalAbonado)
+        }
         backupRepository?.programarRespaldoClientes()
     }
 }

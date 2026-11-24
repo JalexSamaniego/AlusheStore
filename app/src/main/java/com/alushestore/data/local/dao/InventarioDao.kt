@@ -129,14 +129,23 @@ interface InventarioDao {
     """)
     suspend fun moverStockAApartado(productoId: Long, cantidad: Int = 1, now: Long = System.currentTimeMillis())
 
+    /**
+     * Regresa piezas de apartadas a disponibles.
+     *
+     * Sólo si de verdad hay esas piezas apartadas. Si alguien ya corrigió el
+     * stock a mano (stockApartado en 0), no se inventa una pieza disponible
+     * de más: la fila no se toca.
+     *
+     * @return 1 si movió las piezas, 0 si no había qué mover.
+     */
     @Query("""
-        UPDATE productos 
+        UPDATE productos
         SET stockDisponible = stockDisponible + :cantidad,
-            stockApartado = MAX(0, stockApartado - :cantidad),
-            updatedAt = :now 
-        WHERE id = :productoId
+            stockApartado = stockApartado - :cantidad,
+            updatedAt = :now
+        WHERE id = :productoId AND stockApartado >= :cantidad
     """)
-    suspend fun liberarStockApartado(productoId: Long, cantidad: Int = 1, now: Long = System.currentTimeMillis())
+    suspend fun liberarStockApartado(productoId: Long, cantidad: Int = 1, now: Long = System.currentTimeMillis()): Int
 
     @Query("""
         UPDATE productos 
@@ -162,6 +171,12 @@ interface InventarioDao {
 
     @Query("SELECT * FROM detalles_venta")
     suspend fun getAllDetallesVentaSync(): List<DetalleVentaEntity>
+
+    @Query("SELECT d.* FROM detalles_venta d INNER JOIN ventas v ON d.ventaId = v.id WHERE v.baseId = :baseId")
+    suspend fun getDetallesByBaseSync(baseId: Long): List<DetalleVentaEntity>
+
+    @Query("SELECT id FROM productos WHERE id IN (:ids)")
+    suspend fun getProductoIdsExistentes(ids: List<Long>): List<Long>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDetalleVenta(detalle: DetalleVentaEntity): Long

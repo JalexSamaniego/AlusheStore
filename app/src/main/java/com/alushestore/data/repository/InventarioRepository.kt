@@ -272,7 +272,9 @@ class InventarioRepository(
                     estado = EstadoApartado.PENDIENTE,
                     vendedor = vendedor,
                     notas = notas.trim(),
-                    tipo = TipoApartado.APARTADO
+                    tipo = TipoApartado.APARTADO,
+                    // Se congela como en el POS; sólo se lee, no se cambia
+                    costoUnitario = producto.costoUnitario.takeIf { it > 0.0 }
                 )
             )
 

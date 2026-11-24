@@ -367,7 +367,8 @@ class HomeViewModel(
                             monto = producto.precio,
                             anticipo = anticipo,
                             vendedor = vendedorActivo.value,
-                            notas = notas
+                            notas = notas,
+                            costoUnitario = producto.costo
                         )
                         cargarCatalogoWeb()
                         if (r.almacen is ResultadoMovimiento.Encolado) {
