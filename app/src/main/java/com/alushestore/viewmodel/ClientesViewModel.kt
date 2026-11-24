@@ -11,6 +11,7 @@ import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.ClienteResumen
 import com.alushestore.data.local.entities.EstadoApartado
+import com.alushestore.data.local.entities.MetodoPago
 import com.alushestore.data.local.entities.TipoApartado
 import com.alushestore.data.repository.AlusheRepository
 import com.alushestore.data.remote.CatalogoRemotoService
@@ -351,7 +352,8 @@ class ClienteDetalleViewModel(
         apartadoId: Long,
         monto: Double,
         nota: String = "",
-        vincularBaseActiva: Boolean = false
+        vincularBaseActiva: Boolean = false,
+        metodoPago: MetodoPago = MetodoPago.EFECTIVO
     ) {
         if (monto <= 0) return
         viewModelScope.launch {
@@ -360,7 +362,8 @@ class ClienteDetalleViewModel(
                 apartadoId = apartadoId,
                 monto = monto,
                 nota = nota,
-                baseId = baseId
+                baseId = baseId,
+                metodoPago = metodoPago.name
             )
             mostrarMensaje("Abono registrado ✓")
         }

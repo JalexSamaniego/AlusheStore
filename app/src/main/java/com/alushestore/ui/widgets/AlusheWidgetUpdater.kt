@@ -10,6 +10,8 @@ import com.alushestore.MainActivity
 import com.alushestore.R
 import com.alushestore.data.local.ActiveUserManager
 import com.alushestore.data.local.AlusheDatabase
+import com.alushestore.data.local.MetasManager
+import com.alushestore.data.repository.BasesVentasRepository
 import com.alushestore.ui.components.toMXN
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +77,14 @@ object AlusheWidgetUpdater {
                     totalHoy = ventas.filter { it.fecha >= inicioHoy }.sumOf { it.monto }
                 }
 
+                // Avance de la meta del mes, si hay. Va en la etiqueta de "hoy"
+                // para no agregarle altura al widget.
+                val metas = MetasManager.getInstance(appContext).config.value
+                val etiquetaHoy = metas.metaMensual?.let { meta ->
+                    val vendidoMes = BasesVentasRepository(db).getVentasDelMesSync().sumOf { it.monto }
+                    "HOY · META ${((vendidoMes / meta) * 100).toInt()}%"
+                } ?: "VENDIDO HOY"
+
                 // Actualizar widgets compactos (4x1)
                 compactIds.forEach { widgetId ->
                     val views = RemoteViews(appContext.packageName, R.layout.widget_alushe_compact)
@@ -120,6 +130,7 @@ object AlusheWidgetUpdater {
                     views.setTextViewText(R.id.tv_extended_vendedor, "👤 $vendedorActivo")
                     views.setTextViewText(R.id.tv_extended_total_base, totalBase.toMXN())
                     views.setTextViewText(R.id.tv_extended_total_hoy, totalHoy.toMXN())
+                    views.setTextViewText(R.id.tv_extended_hoy_label, etiquetaHoy)
 
                     // Click en ⚡ Venta Rápida -> QuickSaleActivity
                     val intentVenta = Intent(appContext, QuickSaleActivity::class.java).apply {

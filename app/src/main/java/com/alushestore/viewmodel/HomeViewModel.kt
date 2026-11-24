@@ -6,6 +6,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.alushestore.data.local.ActiveUserManager
+import com.alushestore.data.local.MetasConfig
+import com.alushestore.data.local.MetasManager
+import com.alushestore.data.local.entities.MetodoPago
+import com.alushestore.domain.CajaDelDia
+import com.alushestore.domain.ProgresoMetas
+import com.alushestore.export.Exportador
 import com.alushestore.data.local.entities.BaseEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.ProductoEntity
@@ -184,7 +190,61 @@ class HomeViewModel(
         mostrarMensaje("Perfiles de usuario actualizados ✓")
     }
 
-    fun agregarVenta(articulo: String, monto: Double, notas: String = "") {
+    // ── Caja del día y metas ─────────────────────────────────────────────────
+
+    /** Cuánto entró hoy en efectivo, transferencia y tarjeta (base activa) */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val cajaDelDia: StateFlow<CajaDelDia> = repository.getBaseActiva()
+        .flatMapLatest { base ->
+            if (base == null) flowOf(emptyList()) else repository.getVentasHoy(base.id)
+        }
+        .map { CajaDelDia.de(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CajaDelDia())
+
+    private val metasManager = context?.let { MetasManager.getInstance(it) }
+
+    val metasConfig: StateFlow<MetasConfig> = metasManager?.config
+        ?: MutableStateFlow(MetasConfig())
+
+    /** Avance de las metas del mes. null mientras no haya ninguna meta puesta. */
+    val progresoMetas: StateFlow<ProgresoMetas?> = combine(
+        metasConfig,
+        repository.ventas.getVentasDelMes()
+    ) { config, ventasMes ->
+        val mes = java.text.SimpleDateFormat("MMMM", java.util.Locale("es", "MX")).format(java.util.Date())
+        ProgresoMetas.de(config, ventasMes, mes)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun guardarMetas(metaMensual: Double?, porVendedor: Map<String, Double?>) {
+        metasManager?.guardar(metaMensual, porVendedor)
+        context?.let { com.alushestore.ui.widgets.AlusheWidgetUpdater.actualizarWidgets(it) }
+        val hayMeta = (metaMensual ?: 0.0) > 0 || porVendedor.values.any { (it ?: 0.0) > 0 }
+        mostrarMensaje(if (hayMeta) "Meta guardada ✓" else "Metas quitadas")
+    }
+
+    /** Excel con las ventas de la base activa; [onListo] recibe el archivo para compartir */
+    fun exportarBaseActiva(onListo: (android.net.Uri) -> Unit) {
+        val ctx = context ?: return
+        viewModelScope.launch {
+            val base = _uiState.value.baseActiva ?: run {
+                mostrarMensaje("No hay base activa para exportar")
+                return@launch
+            }
+            try {
+                val (ventas, detalles) = repository.ventasConDetallesDeBase(base.id)
+                onListo(Exportador.ventasDeBase(ctx, base, ventas, detalles))
+            } catch (e: Exception) {
+                mostrarMensaje("No se pudo exportar: ${e.message}")
+            }
+        }
+    }
+
+    fun agregarVenta(
+        articulo: String,
+        monto: Double,
+        notas: String = "",
+        metodoPago: MetodoPago = MetodoPago.EFECTIVO
+    ) {
         viewModelScope.launch {
             val baseId = _uiState.value.baseActiva?.id ?: run {
                 // Si no hay base activa, crear una automáticamente
@@ -195,7 +255,8 @@ class HomeViewModel(
                 articulo = articulo,
                 monto = monto,
                 notas = notas,
-                vendedor = vendedorActivo.value
+                vendedor = vendedorActivo.value,
+                metodoPago = metodoPago.name
             )
             mostrarMensaje("Venta agregada ✓")
         }
@@ -209,7 +270,11 @@ class HomeViewModel(
      * habían pasado y no se cobra nada: más vale no vender que dejar el almacén
      * descuadrado.
      */
-    fun cobrarVentaPos(items: List<CartItem>, notas: String = "") {
+    fun cobrarVentaPos(
+        items: List<CartItem>,
+        notas: String = "",
+        metodoPago: MetodoPago = MetodoPago.EFECTIVO
+    ) {
         viewModelScope.launch {
             try {
                 val delAlmacen = items.filter { it.esDelAlmacenCompartido }
@@ -267,7 +332,8 @@ class HomeViewModel(
                     baseId = baseId,
                     vendedor = vendedorActivo.value,
                     items = items,
-                    notas = notas
+                    notas = notas,
+                    metodoPago = metodoPago.name
                 )
                 repository.backup.programarRespaldoInventario()
                 if (delAlmacen.isNotEmpty()) cargarCatalogoWeb()

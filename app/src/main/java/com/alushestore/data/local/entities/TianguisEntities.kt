@@ -34,5 +34,7 @@ data class TianguisVentaEntity(
     val sesionId: Long,
     val descripcion: String,
     val monto: Double,
-    val fecha: Long = System.currentTimeMillis()
+    val fecha: Long = System.currentTimeMillis(),
+    /** Ver [MetodoPago]. null en las ventas anteriores a la 2.1. */
+    val metodoPago: String? = null
 )

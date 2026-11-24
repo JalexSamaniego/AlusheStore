@@ -2,6 +2,8 @@ package com.alushestore.viewmodel
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import com.alushestore.export.Exportador
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -90,6 +92,29 @@ class BasesViewModel(private val repository: AlusheRepository) : ViewModel() {
 
     fun cerrarDialogoCorte() {
         _corteVisible.value = null
+    }
+
+    /**
+     * Arma el archivo del corte: PDF del estado de cuenta, o Excel con todas
+     * las ventas de esa base. [onListo] recibe el archivo para compartir.
+     */
+    fun exportarCorte(context: Context, corte: CorteConVendedores, comoExcel: Boolean, onListo: (Uri) -> Unit) {
+        val ctx = context.applicationContext
+        viewModelScope.launch {
+            try {
+                val uri = if (comoExcel) {
+                    val base = repository.getBaseById(corte.corte.baseId)
+                        ?: throw IllegalStateException("La base ya no existe")
+                    val (ventas, detalles) = repository.ventasConDetallesDeBase(base.id)
+                    Exportador.ventasDeBase(ctx, base, ventas, detalles)
+                } else {
+                    Exportador.cortePdf(ctx, corte)
+                }
+                onListo(uri)
+            } catch (e: Exception) {
+                mostrarMensaje("No se pudo exportar: ${e.message}")
+            }
+        }
     }
 
     fun eliminarBase(base: BaseEntity) {

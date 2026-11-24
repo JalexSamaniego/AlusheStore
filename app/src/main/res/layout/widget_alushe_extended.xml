@@ -108,9 +108,13 @@
             android:paddingEnd="10dp"
             android:paddingBottom="6dp">
 
+            <!-- Con meta del mes dice "HOY · META 62%"; sin meta, "VENDIDO HOY" -->
             <TextView
+                android:id="@+id/tv_extended_hoy_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
                 android:text="VENDIDO HOY"
                 android:textColor="#A0A096"
                 android:textSize="9sp"

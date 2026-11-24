@@ -305,6 +305,19 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
+/**
+ * Método de pago en cada venta, para el corte de caja del día.
+ *
+ * Aditiva: las ventas que ya existen quedan con NULL ("sin especificar") y
+ * ninguna fila se reescribe. No toca la tabla de productos.
+ */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `ventas` ADD COLUMN `metodoPago` TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE `tianguis_ventas` ADD COLUMN `metodoPago` TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         BaseEntity::class,
@@ -321,7 +334,7 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         CorteVendedorEntity::class,
         MovimientoPendienteEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AlusheDatabase : RoomDatabase() {
@@ -362,7 +375,7 @@ abstract class AlusheDatabase : RoomDatabase() {
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-                    MIGRATION_8_9
+                    MIGRATION_8_9, MIGRATION_9_10
                 )
                 // SIN fallbackToDestructiveMigration, a propósito.
                 //

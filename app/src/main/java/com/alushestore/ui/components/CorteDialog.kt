@@ -24,7 +24,9 @@ import com.alushestore.ui.theme.*
 @Composable
 fun CorteDialog(
     corte: CorteConVendedores,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onExportarPdf: (() -> Unit)? = null,
+    onExportarExcel: (() -> Unit)? = null
 ) {
     val c = corte.corte
 
@@ -155,6 +157,31 @@ fun CorteDialog(
                 )
 
                 Spacer(Modifier.height(14.dp))
+
+                if (onExportarPdf != null || onExportarExcel != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        onExportarPdf?.let {
+                            AlusheButton(
+                                text = "PDF",
+                                onClick = it,
+                                variante = ButtonVariante.OUTLINE,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        onExportarExcel?.let {
+                            AlusheButton(
+                                text = "Excel",
+                                onClick = it,
+                                variante = ButtonVariante.OUTLINE,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
 
                 AlusheButton(
                     text = "Cerrar",

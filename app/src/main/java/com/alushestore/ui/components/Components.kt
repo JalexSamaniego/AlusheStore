@@ -309,7 +309,9 @@ fun StatCard(
     valor: String,
     modifier: Modifier = Modifier,
     accentColor: Color = MaterialTheme.colorScheme.secondary,
-    esDestacada: Boolean = false
+    esDestacada: Boolean = false,
+    /** Si se da, la tarjeta se puede tocar y muestra una flechita discreta */
+    onClick: (() -> Unit)? = null
 ) {
     val bgColor = if (esDestacada) AlusheGreen else AlusheWhite
     val textColor = if (esDestacada) AlusheWhite else accentColor
@@ -324,7 +326,9 @@ fun StatCard(
             )
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (onClick != null) Modifier.clip(ShapeCard).clickable { onClick() } else Modifier),
             colors = CardDefaults.cardColors(containerColor = bgColor),
             shape = ShapeCard,
             elevation = CardDefaults.cardElevation(0.dp),
@@ -333,14 +337,25 @@ fun StatCard(
             else null
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp)) {
-                Text(
-                    text = label.uppercase(),
-                    fontFamily = Montserrat,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 9.sp,
-                    color = labelColor,
-                    letterSpacing = 1.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = label.uppercase(),
+                        fontFamily = Montserrat,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 9.sp,
+                        color = labelColor,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (onClick != null) {
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = labelColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
                 Spacer(Modifier.height(5.dp))
                 Text(
                     text = valor,
@@ -635,3 +650,67 @@ fun AlusheButton(
 }
 
 enum class ButtonVariante { VERDE, NEGRO, OUTLINE }
+
+// ── MetodoPagoSelector — Efectivo · Transferencia · Tarjeta ──────────────────
+
+/**
+ * Las tres formas de cobro en una sola fila. Compacto a propósito: va dentro
+ * de hojas que ya tienen varios campos.
+ *
+ * @param sobreOscuro para usarlo dentro del panel negro del carrito del POS
+ */
+@Composable
+fun MetodoPagoSelector(
+    seleccionado: com.alushestore.data.local.entities.MetodoPago,
+    onSeleccionar: (com.alushestore.data.local.entities.MetodoPago) -> Unit,
+    modifier: Modifier = Modifier,
+    sobreOscuro: Boolean = false
+) {
+    val fondo = if (sobreOscuro) AlusheCream.copy(alpha = 0.08f) else AlusheCreamDark
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(ShapePill)
+            .background(fondo)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        com.alushestore.data.local.entities.MetodoPago.values().forEach { metodo ->
+            val activo = metodo == seleccionado
+            val colorFondo by animateColorAsState(
+                targetValue = when {
+                    !activo -> Color.Transparent
+                    sobreOscuro -> AlusheGreen
+                    else -> AlusheInk
+                },
+                animationSpec = tween(160),
+                label = "metodoFondo"
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(ShapePill)
+                    .background(colorFondo)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onSeleccionar(metodo) }
+                    .padding(vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = metodo.etiqueta,
+                    fontFamily = Montserrat,
+                    fontWeight = if (activo) FontWeight.Bold else FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    color = when {
+                        activo -> if (sobreOscuro) AlusheWhite else AlusheCream
+                        sobreOscuro -> AlusheCream.copy(alpha = 0.65f)
+                        else -> AlusheInkMid
+                    },
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}

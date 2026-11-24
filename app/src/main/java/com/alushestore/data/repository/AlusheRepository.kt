@@ -100,10 +100,21 @@ class AlusheRepository(
         articulo: String,
         monto: Double,
         notas: String = "",
-        vendedor: String = "PRINCIPAL"
-    ): Long = ventas.agregarVenta(baseId, articulo, monto, notas, vendedor = vendedor)
+        vendedor: String = "PRINCIPAL",
+        metodoPago: String? = null
+    ): Long = ventas.agregarVenta(baseId, articulo, monto, notas, vendedor = vendedor, metodoPago = metodoPago)
     suspend fun eliminarVenta(ventaId: Long) = ventas.eliminarVenta(ventaId)
     suspend fun editarVenta(venta: VentaEntity) = ventas.editarVenta(venta)
+
+    /** Ventas de una base con sus líneas de costo, para exportarlas a Excel */
+    suspend fun ventasConDetallesDeBase(
+        baseId: Long
+    ): Pair<List<VentaEntity>, List<com.alushestore.data.local.entities.DetalleVentaEntity>> {
+        val ventasBase = db.ventaDao().getVentasByBaseSync(baseId)
+        val ids = ventasBase.map { it.id }.toSet()
+        val detalles = db.inventarioDao().getAllDetallesVentaSync().filter { it.ventaId in ids }
+        return ventasBase to detalles
+    }
 
     // ── Drive Backup ──────────────────────────────────────────────────────────
 
@@ -123,8 +134,8 @@ class AlusheRepository(
     suspend fun iniciarSesionTianguis(nombre: String): Long = tianguis.iniciarSesionTianguis(nombre)
     suspend fun editarNombreSesion(sesion: TianguisSesionEntity, nuevoNombre: String) =
         tianguis.editarNombreSesion(sesion, nuevoNombre)
-    suspend fun agregarVentaTianguis(sesionId: Long, descripcion: String, monto: Double): Long =
-        tianguis.agregarVentaTianguis(sesionId, descripcion, monto)
+    suspend fun agregarVentaTianguis(sesionId: Long, descripcion: String, monto: Double, metodoPago: String? = null): Long =
+        tianguis.agregarVentaTianguis(sesionId, descripcion, monto, metodoPago)
     suspend fun editarVentaTianguis(venta: TianguisVentaEntity) = tianguis.editarVentaTianguis(venta)
     suspend fun eliminarVentaTianguis(ventaId: Long) = tianguis.eliminarVentaTianguis(ventaId)
     suspend fun cerrarSesionTianguis(sesionId: Long): TianguisSesionEntity? = tianguis.cerrarSesionTianguis(sesionId)
@@ -172,8 +183,9 @@ class AlusheRepository(
         monto: Double,
         nota: String = "",
         baseId: Long? = null,
-        fecha: Long = System.currentTimeMillis()
-    ): Long = clientes.registrarAbono(apartadoId, monto, nota, baseId, fecha)
+        fecha: Long = System.currentTimeMillis(),
+        metodoPago: String? = null
+    ): Long = clientes.registrarAbono(apartadoId, monto, nota, baseId, fecha, metodoPago)
 
     suspend fun eliminarAbono(abono: AbonoEntity) = clientes.eliminarAbono(abono)
 

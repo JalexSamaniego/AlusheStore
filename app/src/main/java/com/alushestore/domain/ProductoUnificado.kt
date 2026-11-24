@@ -34,7 +34,9 @@ data class ProductoUnificado(
     val stockApartado: Int = 0,
     /** Sólo la tiene lo que vive en Room; el catálogo web no maneja ubicación */
     val ubicacion: String? = null,
-    val origen: OrigenProducto
+    val origen: OrigenProducto,
+    /** Foto del catálogo web, para compartir el catálogo por WhatsApp */
+    val urlImagen: String? = null
 ) {
     /** Clave de identidad estable para listas de Compose */
     val clave: String
@@ -76,7 +78,8 @@ data class ProductoUnificado(
             costo = p.costo ?: 0.0,
             precio = p.precioNumerico,
             stockDisponible = p.stock ?: 0,
-            origen = OrigenProducto.WEB
+            origen = OrigenProducto.WEB,
+            urlImagen = p.fotoDurable
         )
 
         /** El SKU como llave de comparación, o null si no sirve como tal */
@@ -139,9 +142,16 @@ data class ProductoUnificado(
 
             val soloRemotos = remotos.filterNot { it.id in yaHermanado }.map { de(it) }
 
+            val remotosPorId = remotos.associateBy { it.id }
             val resultado = deLocales.map { local ->
                 val idRemoto = local.idLocal?.let { hermanados[it] }
-                if (idRemoto != null) local.copy(idRemoto = idRemoto, origen = OrigenProducto.AMBOS)
+                val remoto = idRemoto?.let { remotosPorId[it] }
+                if (idRemoto != null) local.copy(
+                    idRemoto = idRemoto,
+                    origen = OrigenProducto.AMBOS,
+                    // La foto sólo existe en el catálogo web
+                    urlImagen = remoto?.fotoDurable
+                )
                 else local
             }
 

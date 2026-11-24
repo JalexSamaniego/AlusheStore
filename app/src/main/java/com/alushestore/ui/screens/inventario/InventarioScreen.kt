@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -65,6 +66,9 @@ fun InventarioScreen(
     val productoParaVender by viewModel.productoParaVender.collectAsStateWithLifecycle()
     val vendiendo by viewModel.vendiendo.collectAsStateWithLifecycle()
     val emparejado by viewModel.emparejado.collectAsStateWithLifecycle()
+    val seleccion by viewModel.seleccion.collectAsStateWithLifecycle()
+    val compartiendo by viewModel.compartiendo.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -83,11 +87,28 @@ fun InventarioScreen(
                 modoPrivacidad = uiState.modoPrivacidad,
                 onTogglePrivacidad = { viewModel.toggleModoPrivacidad() },
                 onBack = onBack,
-                onDriveBackup = { viewModel.respaldarEnDrive() }
+                onDriveBackup = { viewModel.respaldarEnDrive() },
+                onCompartirCatalogo = {
+                    viewModel.setPestaña(0)
+                    viewModel.iniciarSeleccion()
+                },
+                onExportar = { viewModel.exportarInventario(context) }
             )
         },
+        bottomBar = {
+            seleccion?.let { elegidos ->
+                BarraCompartir(
+                    cantidad = elegidos.size,
+                    compartiendo = compartiendo,
+                    onTodos = { viewModel.seleccionarVisibles() },
+                    onCancelar = { viewModel.terminarSeleccion() },
+                    onTexto = { viewModel.compartirCatalogo(context, comoImagen = false) },
+                    onImagen = { viewModel.compartirCatalogo(context, comoImagen = true) }
+                )
+            }
+        },
         floatingActionButton = {
-            FloatingActionButton(
+            if (seleccion == null) FloatingActionButton(
                 onClick = {
                     if (uiState.pestañaSeleccionada == 0) {
                         viewModel.abrirAddProductoSheet()
@@ -283,8 +304,11 @@ private fun InventarioTopBar(
     modoPrivacidad: Boolean,
     onTogglePrivacidad: () -> Unit,
     onBack: () -> Unit,
-    onDriveBackup: () -> Unit
+    onDriveBackup: () -> Unit,
+    onCompartirCatalogo: () -> Unit,
+    onExportar: () -> Unit
 ) {
+    var menuAbierto by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -335,13 +359,114 @@ private fun InventarioTopBar(
                 )
             }
 
-            // Respaldo en Drive
-            IconButton(onClick = onDriveBackup, modifier = Modifier.bounce()) {
-                Icon(
-                    imageVector = Icons.Default.CloudUpload,
-                    contentDescription = "Respaldar Inventario en Drive",
-                    tint = AlusheCream.copy(alpha = 0.8f)
+            // Más acciones: respaldo, compartir y exportar en un solo menú
+            Box {
+                IconButton(onClick = { menuAbierto = true }, modifier = Modifier.bounce()) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Más opciones",
+                        tint = AlusheCream.copy(alpha = 0.8f)
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuAbierto,
+                    onDismissRequest = { menuAbierto = false },
+                    modifier = Modifier.background(AlusheWhite)
+                ) {
+                    MenuOpcion(Icons.Default.Share, "Compartir catálogo") { menuAbierto = false; onCompartirCatalogo() }
+                    MenuOpcion(Icons.Default.TableChart, "Exportar a Excel") { menuAbierto = false; onExportar() }
+                    MenuOpcion(Icons.Default.CloudUpload, "Respaldar en Drive") { menuAbierto = false; onDriveBackup() }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuOpcion(icono: androidx.compose.ui.graphics.vector.ImageVector, texto: String, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(texto, fontFamily = Montserrat, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = AlusheInk) },
+        leadingIcon = { Icon(icono, null, tint = AlusheInkMid) },
+        onClick = onClick
+    )
+}
+
+/**
+ * Barra que reemplaza al botón flotante mientras se eligen productos para
+ * compartir. Una línea con el conteo y dos acciones, nada más.
+ */
+@Composable
+private fun BarraCompartir(
+    cantidad: Int,
+    compartiendo: Boolean,
+    onTodos: () -> Unit,
+    onCancelar: () -> Unit,
+    onTexto: () -> Unit,
+    onImagen: () -> Unit
+) {
+    Surface(color = AlusheInk) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (cantidad == 0) "Toca los productos a compartir" else "$cantidad elegido${if (cantidad == 1) "" else "s"}",
+                    fontFamily = Montserrat,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = AlusheCream,
+                    modifier = Modifier.weight(1f)
                 )
+                Text(
+                    "Todos",
+                    fontFamily = Montserrat, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                    color = AlusheGreen,
+                    modifier = Modifier.clip(ShapePill).clickable { onTodos() }.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+                Text(
+                    "Cancelar",
+                    fontFamily = Montserrat, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                    color = AlusheCream.copy(alpha = 0.65f),
+                    modifier = Modifier.clip(ShapePill).clickable { onCancelar() }.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onTexto,
+                    enabled = cantidad > 0 && !compartiendo,
+                    modifier = Modifier.weight(1f),
+                    shape = ShapePill,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AlusheCream.copy(alpha = if (cantidad > 0) 0.4f else 0.15f)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AlusheCream,
+                        disabledContentColor = AlusheCream.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Text("Texto", fontFamily = Montserrat, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+                Button(
+                    onClick = onImagen,
+                    enabled = cantidad > 0 && !compartiendo,
+                    modifier = Modifier.weight(1f),
+                    shape = ShapePill,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AlusheGreen,
+                        contentColor = AlusheWhite,
+                        // Sobre el fondo negro el gris por defecto desaparece
+                        disabledContainerColor = AlusheGreen.copy(alpha = 0.25f),
+                        disabledContentColor = AlusheCream.copy(alpha = 0.45f)
+                    )
+                ) {
+                    if (compartiendo) {
+                        CircularProgressIndicator(color = AlusheWhite, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                    } else {
+                        Text("Imagen", fontFamily = Montserrat, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
             }
         }
     }
@@ -361,6 +486,7 @@ private fun CatalogoTabContent(
     val errorWeb by viewModel.errorCatalogoWeb.collectAsStateWithLifecycle()
     val emparejado by viewModel.emparejado.collectAsStateWithLifecycle()
     val correoSesion by viewModel.correoSesion.collectAsStateWithLifecycle()
+    val seleccion by viewModel.seleccion.collectAsStateWithLifecycle()
 
     // Los totales de arriba cuentan lo que se está viendo, de los dos orígenes.
     // Antes sólo sumaban el inventario local y decían 0 aunque la lista trajera 144.
@@ -596,10 +722,18 @@ private fun CatalogoTabContent(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(productos, key = { it.clave }) { producto ->
+                    val elegidos = seleccion
                     ProductoItemCard(
                         producto = producto,
                         modoPrivacidad = uiState.modoPrivacidad,
-                        onClick = { viewModel.abrirEditDesdeUnificado(producto) }
+                        seleccionado = elegidos?.let { producto.clave in it },
+                        onClick = {
+                            when {
+                                elegidos == null -> viewModel.abrirEditDesdeUnificado(producto)
+                                // Lo agotado no se ofrece a los clientes
+                                producto.stockDisponible > 0 -> viewModel.alternarSeleccion(producto)
+                            }
+                        }
                     )
                 }
 
@@ -671,14 +805,21 @@ private fun CatalogoTabContent(
 private fun ProductoItemCard(
     producto: ProductoUnificado,
     modoPrivacidad: Boolean,
+    /** null = no se está eligiendo; true/false = elegido o no para compartir */
+    seleccionado: Boolean? = null,
     onClick: () -> Unit
 ) {
+    val elegible = seleccionado == null || producto.stockDisponible > 0
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer { alpha = if (elegible) 1f else 0.45f }
             .bounceClickable { onClick() },
         shape = ShapeCard,
-        colors = CardDefaults.cardColors(containerColor = AlusheWhite),
+        colors = CardDefaults.cardColors(
+            containerColor = if (seleccionado == true) AlusheGreenSurface else AlusheWhite
+        ),
+        border = if (seleccionado == true) androidx.compose.foundation.BorderStroke(1.5.dp, AlusheGreen) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -689,6 +830,14 @@ private fun ProductoItemCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (seleccionado != null) {
+                        Icon(
+                            imageVector = if (seleccionado) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            contentDescription = if (seleccionado) "Elegido" else "Sin elegir",
+                            tint = if (seleccionado) AlusheGreen else AlusheInkLight,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                     if (!producto.sku.isNullOrBlank()) {
                         Box(
                             modifier = Modifier

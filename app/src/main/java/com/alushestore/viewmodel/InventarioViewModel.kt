@@ -15,6 +15,8 @@ import com.alushestore.data.remote.SupabaseAuthManager
 import com.alushestore.data.repository.AlusheRepository
 import com.alushestore.data.repository.LoteRentabilidad
 import com.alushestore.domain.ProductoUnificado
+import com.alushestore.export.CatalogoCompartible
+import com.alushestore.export.Exportador
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -576,6 +578,77 @@ class InventarioViewModel(
 
     fun calcularProrrateo(gastosEnvio: Double, piezas: Int): Double {
         return repository.inventario.calcularProrrateoEnvio(gastosEnvio, piezas)
+    }
+
+    // ── Compartir catálogo y exportar ─────────────────────────────────────────
+
+    /** Claves de los productos elegidos para compartir. null = no se está eligiendo. */
+    private val _seleccion = MutableStateFlow<Set<String>?>(null)
+    val seleccion: StateFlow<Set<String>?> = _seleccion.asStateFlow()
+
+    private val _compartiendo = MutableStateFlow(false)
+    val compartiendo: StateFlow<Boolean> = _compartiendo.asStateFlow()
+
+    fun iniciarSeleccion() { _seleccion.value = emptySet() }
+    fun terminarSeleccion() { _seleccion.value = null }
+
+    fun alternarSeleccion(p: ProductoUnificado) {
+        val actual = _seleccion.value ?: return
+        _seleccion.value = if (p.clave in actual) actual - p.clave else actual + p.clave
+    }
+
+    /** Elige de una vez todo lo que se está viendo y tiene piezas */
+    fun seleccionarVisibles() {
+        _seleccion.value = catalogoUnificado.value.filter { it.stockDisponible > 0 }.map { it.clave }.toSet()
+    }
+
+    private fun productosElegidos(): List<ProductoUnificado> {
+        val claves = _seleccion.value ?: return emptyList()
+        return _catalogoFusionado.value.filter { it.clave in claves }
+    }
+
+    /** Imagen con fotos para WhatsApp o estados, o la lista en texto */
+    fun compartirCatalogo(context: Context, comoImagen: Boolean) {
+        val elegidos = productosElegidos()
+        if (elegidos.isEmpty()) {
+            mostrarMensaje("Elige al menos un producto")
+            return
+        }
+        if (!comoImagen) {
+            CatalogoCompartible.compartirTexto(context, elegidos)
+            terminarSeleccion()
+            return
+        }
+        viewModelScope.launch {
+            _compartiendo.value = true
+            try {
+                val uri = CatalogoCompartible.imagen(context.applicationContext, elegidos)
+                CatalogoCompartible.compartirImagen(context, uri, elegidos.take(CatalogoCompartible.MAXIMO_EN_IMAGEN))
+                if (elegidos.size > CatalogoCompartible.MAXIMO_EN_IMAGEN) {
+                    mostrarMensaje("La imagen lleva los primeros ${CatalogoCompartible.MAXIMO_EN_IMAGEN}; el texto los lleva todos")
+                }
+                terminarSeleccion()
+            } catch (e: Exception) {
+                mostrarMensaje("No se pudo armar la imagen: ${e.message}")
+            }
+            _compartiendo.value = false
+        }
+    }
+
+    /** Excel con todo el catálogo. Sin costos si está activo el modo privacidad. */
+    fun exportarInventario(context: Context) {
+        viewModelScope.launch {
+            try {
+                val uri = Exportador.inventario(
+                    context.applicationContext,
+                    _catalogoFusionado.value,
+                    incluirCostos = !_modoPrivacidad.value
+                )
+                Exportador.compartir(context, uri, "Exportar inventario")
+            } catch (e: Exception) {
+                mostrarMensaje("No se pudo exportar: ${e.message}")
+            }
+        }
     }
 
     // ── Sincronización Drive ──────────────────────────────────────────────────

@@ -35,6 +35,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.style.TextOverflow
 import com.alushestore.R
 import com.alushestore.data.local.entities.ClienteEntity
+import com.alushestore.data.local.entities.MetodoPago
+import com.alushestore.domain.CajaDelDia
+import com.alushestore.domain.ProgresoMetas
 import com.alushestore.data.local.entities.ProductoEntity
 import com.alushestore.data.local.entities.VentaEntity
 import com.alushestore.data.local.ActiveUserManager
@@ -67,6 +70,11 @@ fun HomeScreen(
     val usuario2 by viewModel.usuario2.collectAsStateWithLifecycle()
     val movimientosPendientes by viewModel.movimientosPendientes.collectAsStateWithLifecycle()
     val movimientosEnConflicto by viewModel.movimientosEnConflicto.collectAsStateWithLifecycle()
+    val cajaDelDia by viewModel.cajaDelDia.collectAsStateWithLifecycle()
+    val progresoMetas by viewModel.progresoMetas.collectAsStateWithLifecycle()
+    val metasConfig by viewModel.metasConfig.collectAsStateWithLifecycle()
+    var mostrarCaja by remember { mutableStateOf(false) }
+    var mostrarMetas by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -152,6 +160,12 @@ fun HomeScreen(
                 onBasesClick = onNavigateToBases,
                 onDriveClick = { viewModel.respaldarEnDrive() },
                 onEstadisticasClick = onNavigateToEstadisticas,
+                onMetasClick = { mostrarMetas = true },
+                onExportarClick = {
+                    viewModel.exportarBaseActiva { uri ->
+                        com.alushestore.export.Exportador.compartir(context, uri, "Exportar ventas")
+                    }
+                },
                 onCheckUpdateClick = {
                     scope.launch {
                         isCheckingUpdates = true
@@ -404,7 +418,8 @@ fun HomeScreen(
                             label = "Hoy",
                             valor = uiState.totalHoy.toMXN(),
                             modifier = Modifier.weight(1f),
-                            accentColor = AlusheInk
+                            accentColor = AlusheInk,
+                            onClick = { mostrarCaja = true }
                         )
                     }
                     Row(
@@ -423,6 +438,10 @@ fun HomeScreen(
                             modifier = Modifier.weight(1f),
                             accentColor = AlusheInkMid
                         )
+                    }
+
+                    progresoMetas?.let { progreso ->
+                        MetaProgresoCard(progreso = progreso, onClick = { mostrarMetas = true })
                     }
                 }
             }
@@ -496,6 +515,24 @@ fun HomeScreen(
 
     HomeModals(viewModel = viewModel)
 
+    if (mostrarCaja) {
+        CajaDelDiaSheet(caja = cajaDelDia, onDismiss = { mostrarCaja = false })
+    }
+
+    if (mostrarMetas) {
+        val u1 by viewModel.usuario1.collectAsStateWithLifecycle()
+        val u2 by viewModel.usuario2.collectAsStateWithLifecycle()
+        MetasDialog(
+            config = metasConfig,
+            vendedores = listOf(u1, u2),
+            onDismiss = { mostrarMetas = false },
+            onGuardar = { mensual, porVendedor ->
+                viewModel.guardarMetas(mensual, porVendedor)
+                mostrarMetas = false
+            }
+        )
+    }
+
     updateInfo?.let { info ->
         UpdateDialog(
             updateInfo = info,
@@ -516,12 +553,12 @@ fun HomeModals(viewModel: HomeViewModel) {
             productos = productosCatalogo,
             clientes = clientes,
             onDismiss = { viewModel.cerrarAddSheet() },
-            onSaveRapida = { articulo, monto, notas ->
-                viewModel.agregarVenta(articulo, monto, notas)
+            onSaveRapida = { articulo, monto, notas, metodo ->
+                viewModel.agregarVenta(articulo, monto, notas, metodo)
                 viewModel.cerrarAddSheet()
             },
-            onCobrarPos = { items, notas ->
-                viewModel.cobrarVentaPos(items, notas)
+            onCobrarPos = { items, notas, metodo ->
+                viewModel.cobrarVentaPos(items, notas, metodo)
             },
             onCrearApartadoPos = { clienteId, producto, anticipo, notas ->
                 viewModel.crearApartadoPos(clienteId, producto, anticipo, notas)
@@ -554,6 +591,8 @@ fun AlusheHeader(
     onBasesClick: () -> Unit,
     onDriveClick: () -> Unit,
     onEstadisticasClick: () -> Unit,
+    onMetasClick: () -> Unit = {},
+    onExportarClick: () -> Unit = {},
     onCheckUpdateClick: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -698,6 +737,43 @@ fun AlusheHeader(
                                 showConfigUserDialog = true
                             }
                         )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "Meta del mes",
+                                    fontFamily = Montserrat,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 13.sp,
+                                    color = AlusheInk
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Flag, null, tint = AlusheInkMid)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onMetasClick()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "Exportar ventas (Excel)",
+                                    fontFamily = Montserrat,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 13.sp,
+                                    color = AlusheInk
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.TableChart, null, tint = AlusheInkMid)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onExportarClick()
+                            }
+                        )
+                        HorizontalDivider(color = AlusheBorder)
                         DropdownMenuItem(
                             text = {
                                 Column {
@@ -1013,11 +1089,13 @@ fun AddVentaSheet(
     productos: List<ProductoUnificado> = emptyList(),
     clientes: List<ClienteEntity> = emptyList(),
     onDismiss: () -> Unit,
-    onSaveRapida: (String, Double, String) -> Unit,
-    onCobrarPos: (List<CartItem>, String) -> Unit = { _, _ -> },
+    onSaveRapida: (String, Double, String, MetodoPago) -> Unit,
+    onCobrarPos: (List<CartItem>, String, MetodoPago) -> Unit = { _, _, _ -> },
     onCrearApartadoPos: (clienteId: Long, producto: ProductoUnificado, anticipo: Double, notas: String) -> Unit = { _, _, _, _ -> }
 ) {
     var modoPos by remember { mutableStateOf(false) }
+    // Compartido entre los dos modos: casi siempre se cobra igual
+    var metodoPago by remember { mutableStateOf(MetodoPago.EFECTIVO) }
 
     // Estado Modo Rápido
     var articulo by remember { mutableStateOf("") }
@@ -1189,7 +1267,10 @@ fun AddVentaSheet(
                             )
                         )
 
-                        Spacer(Modifier.height(4.dp))
+                        MetodoPagoSelector(
+                            seleccionado = metodoPago,
+                            onSeleccionar = { metodoPago = it }
+                        )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1208,7 +1289,7 @@ fun AddVentaSheet(
                                     errorArticulo = articulo.isBlank()
                                     errorMonto = montoDouble == null || montoDouble <= 0
                                     if (!errorArticulo && !errorMonto) {
-                                        onSaveRapida(articulo.trim(), montoDouble!!, notasRapida.trim())
+                                        onSaveRapida(articulo.trim(), montoDouble!!, notasRapida.trim(), metodoPago)
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
@@ -1563,11 +1644,19 @@ fun AddVentaSheet(
 
                                     Spacer(Modifier.height(10.dp))
 
+                                    MetodoPagoSelector(
+                                        seleccionado = metodoPago,
+                                        onSeleccionar = { metodoPago = it },
+                                        sobreOscuro = true
+                                    )
+
+                                    Spacer(Modifier.height(8.dp))
+
                                     // El POS sólo cobra. Los apartados se hacen desde
                                     // Clientes, que es donde vive el compromiso con la
                                     // persona y donde se le registran los abonos.
                                     Button(
-                                        onClick = { onCobrarPos(carrito, notasPos) },
+                                        onClick = { onCobrarPos(carrito, notasPos, metodoPago) },
                                         modifier = Modifier.fillMaxWidth().height(44.dp).bounce(),
                                         colors = ButtonDefaults.buttonColors(containerColor = AlusheGreen),
                                         shape = ShapePill

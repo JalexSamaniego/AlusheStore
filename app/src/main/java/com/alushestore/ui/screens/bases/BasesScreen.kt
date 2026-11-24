@@ -318,7 +318,17 @@ fun BasesScreen(
     corteVisible?.let { corte ->
         CorteDialog(
             corte = corte,
-            onDismiss = { viewModel.cerrarDialogoCorte() }
+            onDismiss = { viewModel.cerrarDialogoCorte() },
+            onExportarPdf = {
+                viewModel.exportarCorte(context, corte, comoExcel = false) {
+                    com.alushestore.export.Exportador.compartir(context, it, "Estado de cuenta")
+                }
+            },
+            onExportarExcel = {
+                viewModel.exportarCorte(context, corte, comoExcel = true) {
+                    com.alushestore.export.Exportador.compartir(context, it, "Ventas del periodo")
+                }
+            }
         )
     }
 }

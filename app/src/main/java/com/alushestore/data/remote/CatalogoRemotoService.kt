@@ -47,7 +47,10 @@ data class ProductoRemoto(
     @SerializedName("stock_minimo") val stockMinimo: Int? = null,
     val categoria: String? = null,
     val estado: String? = null,
+    /** Enlace original de Facebook. Caduca: usar [fotoDurable]. */
     @SerializedName("url_imagen") val urlImagen: String? = null,
+    /** Copia de la foto en Supabase Storage (el nombre es histórico). No caduca. */
+    @SerializedName("url_github") val urlGithub: String? = null,
     val fuente: String? = null,
     val actualizado: String? = null
 ) {
@@ -71,6 +74,13 @@ data class ProductoRemoto(
                 ?: 0.0
             return total / (piezasPorPrecio ?: 1).coerceAtLeast(1)
         }
+
+    /**
+     * La foto que hay que mostrar, en el mismo orden que la web
+     * (`p.url_github || p.url_imagen`): primero la de Supabase Storage, porque
+     * los enlaces de Facebook de `url_imagen` caducan a los pocos días.
+     */
+    val fotoDurable: String? get() = urlGithub?.takeIf { it.isNotBlank() } ?: urlImagen?.takeIf { it.isNotBlank() }
 
     val disponible: Boolean get() = (stock ?: 0) > 0 && !estado.equals("Agotado", ignoreCase = true)
     val stockBajo: Boolean get() = stockMinimo != null && (stock ?: 0) <= stockMinimo

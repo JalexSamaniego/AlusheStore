@@ -3,6 +3,7 @@ package com.alushestore.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.alushestore.data.local.entities.MetodoPago
 import com.alushestore.data.local.entities.TianguisSesionEntity
 import com.alushestore.data.local.entities.TianguisVentaEntity
 import com.alushestore.data.repository.AlusheRepository
@@ -125,10 +126,10 @@ class TianguisViewModel(private val repository: AlusheRepository) : ViewModel() 
         }
     }
 
-    fun agregarVenta(descripcion: String, monto: Double) {
+    fun agregarVenta(descripcion: String, monto: Double, metodoPago: MetodoPago = MetodoPago.EFECTIVO) {
         viewModelScope.launch {
             val sesionId = _uiState.value.sesionActiva?.id ?: return@launch
-            repository.agregarVentaTianguis(sesionId, descripcion, monto)
+            repository.agregarVentaTianguis(sesionId, descripcion, monto, metodoPago.name)
             mostrarMensaje("Venta agregada ✓")
         }
     }

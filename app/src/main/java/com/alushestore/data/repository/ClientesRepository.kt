@@ -7,6 +7,7 @@ import com.alushestore.data.local.entities.ApartadoConAbonos
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.ClienteResumen
+import com.alushestore.data.local.entities.MetodoPago
 import com.alushestore.data.local.entities.DetalleVentaEntity
 import com.alushestore.data.local.entities.EstadoApartado
 import com.alushestore.data.local.entities.TipoApartado
@@ -304,8 +305,14 @@ class ClientesRepository(
         monto: Double,
         nota: String = "",
         baseId: Long? = null,
-        fecha: Long = System.currentTimeMillis()
+        fecha: Long = System.currentTimeMillis(),
+        metodoPago: String? = null
     ): Long {
+        // El abono no tiene columna propia para el método: va al inicio de la
+        // nota, que es lo que ya se ve en el historial y en el comprobante.
+        val etiquetaMetodo = MetodoPago.de(metodoPago)?.etiqueta
+        val notaFinal = listOfNotNull(etiquetaMetodo, nota.trim().ifBlank { null }).joinToString(" · ")
+
         val id = db.withTransaction {
             val apartado = db.apartadoDao().getApartadoByIdSync(apartadoId)
             val abonadoAntes = db.abonoDao().getTotalAbonadoByApartado(apartadoId) ?: 0.0
@@ -316,7 +323,7 @@ class ClientesRepository(
                     baseId = baseId,
                     monto = monto,
                     fecha = fecha,
-                    nota = nota.trim()
+                    nota = notaFinal
                 )
             )
 
@@ -331,10 +338,11 @@ class ClientesRepository(
                         monto = monto,
                         saldoAntes = apartado.monto - abonadoAntes,
                         fecha = fecha,
-                        articulo = desc
+                        articulo = desc,
+                        metodoPago = metodoPago
                     )
                 } else {
-                    agregarVentaEnBase(baseId, desc, monto, fecha)
+                    agregarVentaEnBase(baseId, desc, monto, fecha, metodoPago)
                 }
             }
             nuevoId
@@ -361,9 +369,10 @@ class ClientesRepository(
         monto: Double,
         saldoAntes: Double,
         fecha: Long,
-        articulo: String
+        articulo: String,
+        metodoPago: String? = null
     ) {
-        val ventaId = agregarVentaEnBase(baseId, articulo, monto, fecha)
+        val ventaId = agregarVentaEnBase(baseId, articulo, monto, fecha, metodoPago)
 
         val local = apartado.productoId?.let { db.inventarioDao().getProductoByIdSync(it) }
         val costoParte = CalculadoraMetricas.costoDeAbono(
@@ -386,10 +395,16 @@ class ClientesRepository(
         )
     }
 
-    private suspend fun agregarVentaEnBase(baseId: Long, articulo: String, monto: Double, fecha: Long): Long =
-        basesVentasRepository?.agregarVenta(baseId, articulo, monto, "", fecha)
+    private suspend fun agregarVentaEnBase(
+        baseId: Long,
+        articulo: String,
+        monto: Double,
+        fecha: Long,
+        metodoPago: String? = null
+    ): Long =
+        basesVentasRepository?.agregarVenta(baseId, articulo, monto, "", fecha, metodoPago = metodoPago)
             ?: db.ventaDao().insertVenta(
-                VentaEntity(baseId = baseId, articulo = articulo, monto = monto, fecha = fecha)
+                VentaEntity(baseId = baseId, articulo = articulo, monto = monto, fecha = fecha, metodoPago = metodoPago)
             )
 
     suspend fun eliminarAbono(abono: AbonoEntity) {

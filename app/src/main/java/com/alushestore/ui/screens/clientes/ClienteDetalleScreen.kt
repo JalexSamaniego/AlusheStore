@@ -31,6 +31,7 @@ import com.alushestore.data.local.entities.ApartadoConAbonos
 import com.alushestore.data.local.entities.ApartadoEntity
 import com.alushestore.data.local.entities.ClienteEntity
 import com.alushestore.data.local.entities.EstadoApartado
+import com.alushestore.data.local.entities.MetodoPago
 import com.alushestore.data.local.entities.TipoApartado
 import com.alushestore.domain.ProductoUnificado
 import com.alushestore.ui.components.*
@@ -265,12 +266,13 @@ private fun ClienteDetalleModals(
         AbonarSheet(
             apartadoConAbonos = apartadoConAbonos,
             onDismiss = { viewModel.cerrarAbonarSheet() },
-            onSave = { monto, nota, vincularBase ->
+            onSave = { monto, nota, vincularBase, metodo ->
                 viewModel.registrarAbono(
                     apartadoId = apartadoConAbonos.apartado.id,
                     monto = monto,
                     nota = nota,
-                    vincularBaseActiva = vincularBase
+                    vincularBaseActiva = vincularBase,
+                    metodoPago = metodo
                 )
                 viewModel.cerrarAbonarSheet()
             }
@@ -953,12 +955,13 @@ private fun ApartadoSheet(
 private fun AbonarSheet(
     apartadoConAbonos: ApartadoConAbonos,
     onDismiss: () -> Unit,
-    onSave: (monto: Double, nota: String, vincularBaseActiva: Boolean) -> Unit
+    onSave: (monto: Double, nota: String, vincularBaseActiva: Boolean, metodo: MetodoPago) -> Unit
 ) {
     val apartado = apartadoConAbonos.apartado
     val saldoRestante = apartadoConAbonos.saldoRestante
     var monto by remember { mutableStateOf("") }
     var nota by remember { mutableStateOf("") }
+    var metodoPago by remember { mutableStateOf(MetodoPago.EFECTIVO) }
     var vincularBase by remember { mutableStateOf(true) }
     var errorMonto by remember { mutableStateOf(false) }
 
@@ -1091,13 +1094,14 @@ private fun AbonarSheet(
                 }
             }
 
-            // Nota / Forma de pago
+            MetodoPagoSelector(seleccionado = metodoPago, onSeleccionar = { metodoPago = it })
+
             OutlinedTextField(
                 value = nota,
                 onValueChange = { nota = it },
-                label = { Text("Nota / Método de pago (opcional)", fontFamily = Montserrat,
+                label = { Text("Nota (opcional)", fontFamily = Montserrat,
                     fontWeight = FontWeight.SemiBold, fontSize = 12.sp) },
-                placeholder = { Text("Ej: Efectivo, Transferencia, En mano", fontFamily = DmSans) },
+                placeholder = { Text("Ej: Lo dejó su hermana", fontFamily = DmSans) },
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 2,
                 shape = ShapeCard,
@@ -1159,7 +1163,7 @@ private fun AbonarSheet(
                         if (montoD == null || montoD <= 0) {
                             errorMonto = true
                         } else {
-                            onSave(montoD, nota.trim(), vincularBase)
+                            onSave(montoD, nota.trim(), vincularBase, metodoPago)
                         }
                     },
                     modifier = Modifier.weight(1f),

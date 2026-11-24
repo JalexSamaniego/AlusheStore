@@ -78,5 +78,19 @@ data class VentaEntity(
     val syncUuid: String? = null,
 
     /** true si proviene del punto de venta con carrito desglosado */
-    val esVentaPos: Boolean = false
+    val esVentaPos: Boolean = false,
+
+    /** Cómo se cobró: ver [MetodoPago]. null en las ventas anteriores a la 2.1. */
+    val metodoPago: String? = null
 )
+
+/** Formas de cobro. Se guardan por nombre en `ventas.metodoPago`. */
+enum class MetodoPago(val etiqueta: String) {
+    EFECTIVO("Efectivo"),
+    TRANSFERENCIA("Transferencia"),
+    TARJETA("Tarjeta");
+
+    companion object {
+        fun de(nombre: String?): MetodoPago? = values().firstOrNull { it.name == nombre }
+    }
+}

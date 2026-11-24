@@ -24,8 +24,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.alushestore.data.local.entities.MetodoPago
 import com.alushestore.data.local.entities.TianguisSesionEntity
 import com.alushestore.data.local.entities.TianguisVentaEntity
+import com.alushestore.domain.CajaDelDia
 import com.alushestore.ui.components.*
 import com.alushestore.ui.theme.*
 import com.alushestore.viewmodel.TianguisViewModel
@@ -301,8 +303,8 @@ fun TianguisModals(viewModel: TianguisViewModel) {
     if (showAddSheet) {
         AddVentaTianguisSheet(
             onDismiss = { viewModel.cerrarAddSheet() },
-            onSave = { descripcion, monto ->
-                viewModel.agregarVenta(descripcion, monto)
+            onSave = { descripcion, monto, metodo ->
+                viewModel.agregarVenta(descripcion, monto, metodo)
                 viewModel.cerrarAddSheet()
             }
         )
@@ -323,6 +325,7 @@ fun TianguisModals(viewModel: TianguisViewModel) {
         uiState.sesionActiva?.let { sesion ->
             CerrarSesionSheet(
                 sesion = sesion,
+                caja = CajaDelDia.deTianguis(uiState.ventasSesion),
                 totalSesion = uiState.totalSesion,
                 cantidadVentas = uiState.cantidadVentas,
                 ventaMasAlta = uiState.ventaMasAlta,
@@ -678,9 +681,10 @@ fun IniciarSesionSheet(onDismiss: () -> Unit, onIniciar: (String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddVentaTianguisSheet(onDismiss: () -> Unit, onSave: (String, Double) -> Unit) {
+fun AddVentaTianguisSheet(onDismiss: () -> Unit, onSave: (String, Double, MetodoPago) -> Unit) {
     var descripcion by remember { mutableStateOf("") }
     var monto by remember { mutableStateOf("") }
+    var metodoPago by remember { mutableStateOf(MetodoPago.EFECTIVO) }
     var errorDesc by remember { mutableStateOf(false) }
     var errorMonto by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -765,6 +769,8 @@ fun AddVentaTianguisSheet(onDismiss: () -> Unit, onSave: (String, Double) -> Uni
                 )
             )
 
+            MetodoPagoSelector(seleccionado = metodoPago, onSeleccionar = { metodoPago = it })
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -781,7 +787,7 @@ fun AddVentaTianguisSheet(onDismiss: () -> Unit, onSave: (String, Double) -> Uni
                         val m = monto.toDoubleOrNull()
                         errorDesc = descripcion.isBlank()
                         errorMonto = m == null || m <= 0
-                        if (!errorDesc && !errorMonto) onSave(descripcion.trim(), m!!)
+                        if (!errorDesc && !errorMonto) onSave(descripcion.trim(), m!!, metodoPago)
                     },
                     modifier = Modifier.weight(1f)
                 )
@@ -912,6 +918,7 @@ fun EditVentaTianguisSheet(
 @Composable
 fun CerrarSesionSheet(
     sesion: TianguisSesionEntity,
+    caja: CajaDelDia,
     totalSesion: Double,
     cantidadVentas: Int,
     ventaMasAlta: Double,
@@ -997,6 +1004,16 @@ fun CerrarSesionSheet(
                     TicketRow("Inicio", sesion.fechaInicio.toHora())
                     TicketRow("Fin", horaFin.toHora())
                     if (ventaMasAlta > 0) TicketRow("Venta más alta", ventaMasAlta.toMXN())
+
+                    // Corte de caja: sólo si hay algo con método, para no
+                    // llenar de ceros las sesiones viejas
+                    if (caja.total - caja.sinEspecificar > 0) {
+                        HorizontalDivider(color = AlusheBorder)
+                        TicketRow("Efectivo en caja", caja.efectivo.toMXN())
+                        if (caja.transferencia > 0) TicketRow("Transferencia", caja.transferencia.toMXN())
+                        if (caja.tarjeta > 0) TicketRow("Tarjeta", caja.tarjeta.toMXN())
+                        if (caja.sinEspecificar > 0) TicketRow("Sin especificar", caja.sinEspecificar.toMXN())
+                    }
                 }
             }
 

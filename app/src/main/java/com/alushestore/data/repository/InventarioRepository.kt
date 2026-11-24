@@ -193,7 +193,8 @@ class InventarioRepository(
         baseId: Long,
         vendedor: String,
         items: List<CartItem>,
-        notas: String = ""
+        notas: String = "",
+        metodoPago: String? = null
     ): Long = withContext(Dispatchers.IO) {
         if (items.isEmpty()) throw IllegalArgumentException("El carrito no contiene productos")
 
@@ -217,7 +218,8 @@ class InventarioRepository(
                     categoria = "POS",
                     notas = notas.trim(),
                     vendedor = vendedor,
-                    esVentaPos = true
+                    esVentaPos = true,
+                    metodoPago = metodoPago
                 )
             )
 
