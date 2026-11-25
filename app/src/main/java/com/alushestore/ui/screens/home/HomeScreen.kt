@@ -524,6 +524,7 @@ fun HomeScreen(
         val u2 by viewModel.usuario2.collectAsStateWithLifecycle()
         MetasDialog(
             config = metasConfig,
+            nombreBase = uiState.baseActiva?.nombre ?: "la base activa",
             vendedores = listOf(u1, u2),
             onDismiss = { mostrarMetas = false },
             onGuardar = { mensual, porVendedor ->
@@ -740,7 +741,7 @@ fun AlusheHeader(
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    "Meta del mes",
+                                    "Meta de la base",
                                     fontFamily = Montserrat,
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 13.sp,

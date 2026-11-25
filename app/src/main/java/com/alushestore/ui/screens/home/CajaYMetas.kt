@@ -24,7 +24,7 @@ import com.alushestore.domain.ProgresoMetas
 import com.alushestore.ui.components.*
 import com.alushestore.ui.theme.*
 
-// ── Meta del mes ──────────────────────────────────────────────────────────────
+// ── Meta de la base ──────────────────────────────────────────────────────────────
 
 /**
  * Una sola tarjeta delgada con la barra de avance. Las metas por persona,
@@ -121,6 +121,7 @@ private fun BarraAvance(fraccion: Double) {
 @Composable
 fun MetasDialog(
     config: MetasConfig,
+    nombreBase: String,
     vendedores: List<String>,
     onDismiss: () -> Unit,
     onGuardar: (Double?, Map<String, Double?>) -> Unit
@@ -138,12 +139,12 @@ fun MetasDialog(
         containerColor = AlusheWhite,
         shape = ShapeCardLg,
         title = {
-            Text("Meta del mes", fontFamily = PlayfairDisplay, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = AlusheInk)
+            Text("Meta de la base", fontFamily = PlayfairDisplay, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = AlusheInk)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "Suma todas las ventas del mes, de cualquier base. Déjalo vacío para quitarla.",
+                    "Cuenta sólo las ventas de $nombreBase. Cada base lleva su propia meta. Déjalo vacío para quitarla.",
                     fontFamily = DmSans, fontSize = 12.sp, color = AlusheInkMid
                 )
                 CampoMonto("Meta del negocio", mensual) { mensual = it }

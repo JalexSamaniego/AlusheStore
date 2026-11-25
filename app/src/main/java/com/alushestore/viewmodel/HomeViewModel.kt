@@ -203,20 +203,32 @@ class HomeViewModel(
 
     private val metasManager = context?.let { MetasManager.getInstance(it) }
 
-    val metasConfig: StateFlow<MetasConfig> = metasManager?.config
-        ?: MutableStateFlow(MetasConfig())
+    /** Metas de la base activa: cada base lleva la suya */
+    val metasConfig: StateFlow<MetasConfig> = combine(
+        repository.getBaseActiva(),
+        metasManager?.todas ?: flowOf(emptyMap())
+    ) { base, todas ->
+        base?.let { todas[it.id] } ?: MetasConfig()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MetasConfig())
 
-    /** Avance de las metas del mes. null mientras no haya ninguna meta puesta. */
-    val progresoMetas: StateFlow<ProgresoMetas?> = combine(
-        metasConfig,
-        repository.ventas.getVentasDelMes()
-    ) { config, ventasMes ->
-        val mes = java.text.SimpleDateFormat("MMMM", java.util.Locale("es", "MX")).format(java.util.Date())
-        ProgresoMetas.de(config, ventasMes, mes)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    /** Avance de las metas de la base activa. null si esa base no tiene meta. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val progresoMetas: StateFlow<ProgresoMetas?> = repository.getBaseActiva()
+        .flatMapLatest { base ->
+            if (base == null) return@flatMapLatest flowOf(null)
+            metasManager?.adoptarMetaAnterior(base.id)
+            combine(metasConfig, repository.getVentasByBase(base.id)) { config, ventas ->
+                ProgresoMetas.de(config, ventas, base.nombre)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun guardarMetas(metaMensual: Double?, porVendedor: Map<String, Double?>) {
-        metasManager?.guardar(metaMensual, porVendedor)
+        val base = _uiState.value.baseActiva ?: run {
+            mostrarMensaje("Activa una base para ponerle meta")
+            return
+        }
+        metasManager?.guardar(base.id, metaMensual, porVendedor)
         context?.let { com.alushestore.ui.widgets.AlusheWidgetUpdater.actualizarWidgets(it) }
         val hayMeta = (metaMensual ?: 0.0) > 0 || porVendedor.values.any { (it ?: 0.0) > 0 }
         mostrarMensaje(if (hayMeta) "Meta guardada ✓" else "Metas quitadas")

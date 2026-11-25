@@ -40,6 +40,14 @@ object CatalogoCompartible {
     /** Más de esto ya no se lee en el teléfono de quien lo recibe */
     const val MAXIMO_EN_IMAGEN = 12
 
+    // Paleta de Alushe (ui/theme/Color.kt), igual en la cuadrícula y en el estado
+    private val CREMA = Color.parseColor("#F6F5CA")
+    private val CREMA_OSCURA = Color.parseColor("#E8E7A8")
+    private val VERDE = Color.parseColor("#25D366")
+    private val TINTA = Color.parseColor("#1A1A18")
+    private val TINTA_SUAVE = Color.parseColor("#7A7A6E")
+    private val BORDE = Color.parseColor("#E5E4D6")
+
     private val dinero = NumberFormat.getCurrencyInstance(Locale("es", "MX")).apply {
         maximumFractionDigits = 0
     }
@@ -69,6 +77,7 @@ object CatalogoCompartible {
      * lleva la inicial del producto en su lugar.
      */
     suspend fun imagen(context: Context, productos: List<ProductoUnificado>): Uri = withContext(Dispatchers.IO) {
+        if (productos.size == 1) return@withContext estado(context, productos.first())
         val lista = productos.take(MAXIMO_EN_IMAGEN)
         val fotos = coroutineScope {
             lista.map { p -> async { p.urlImagen?.let { descargar(it) } } }.awaitAll()
@@ -90,11 +99,11 @@ object CatalogoCompartible {
 
         val bmp = Bitmap.createBitmap(ancho, alto, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        c.drawColor(Color.parseColor("#F7F5F0"))
+        c.drawColor(CREMA)
 
-        val tinta = Color.parseColor("#1A1A1A")
-        val verde = Color.parseColor("#2D7A4F")
-        val gris = Color.parseColor("#7A7A6E")
+        val tinta = TINTA
+        val verde = VERDE
+        val gris = TINTA_SUAVE
 
         // Encabezado
         val pEtiqueta = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -108,7 +117,7 @@ object CatalogoCompartible {
 
         val pTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         val pBorde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E5E4D6"); style = Paint.Style.STROKE; strokeWidth = 2f
+            color = BORDE; style = Paint.Style.STROKE; strokeWidth = 2f
         }
         val pNombre = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = tinta; textSize = 34f; typeface = Typeface.DEFAULT_BOLD
@@ -120,7 +129,7 @@ object CatalogoCompartible {
             color = verde; textSize = 160f; typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        val pFondoFoto = Paint().apply { color = Color.parseColor("#EAF5EE") }
+        val pFondoFoto = Paint().apply { color = CREMA_OSCURA }
 
         lista.forEachIndexed { i, p ->
             val col = i % columnas
@@ -167,13 +176,101 @@ object CatalogoCompartible {
         }
         c.drawText("Pregunta por el tuyo · alushe.store", ancho / 2f, (alto - 52).toFloat(), pPie)
 
+        fotos.forEach { it?.recycle() }
+        guardar(context, bmp)
+    }
+
+    /**
+     * Un solo artículo, a pantalla completa para un estado de WhatsApp (9:16).
+     *
+     * La foto llena la parte de arriba y abajo va una franja crema con el
+     * nombre y el precio. El texto se queda lejos de las orillas, porque
+     * WhatsApp encima su barra de avance arriba y la de "Responder" abajo.
+     */
+    private fun estado(context: Context, p: ProductoUnificado): Uri {
+        val ancho = 1080
+        val alto = 1920
+        val altoFoto = 1300
+        // Lo que tape WhatsApp abajo; el texto termina antes
+        val zonaSeguraAbajo = 200
+
+        val crema = CREMA
+        val cremaOscura = CREMA_OSCURA
+        val verde = VERDE
+        val tinta = TINTA
+        val tintaSuave = TINTA_SUAVE
+
+        val bmp = Bitmap.createBitmap(ancho, alto, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        c.drawColor(crema)
+
+        // Foto a lo ancho, recortada al centro
+        val areaFoto = Rect(0, 0, ancho, altoFoto)
+        c.drawRect(areaFoto, Paint().apply { color = cremaOscura })
+        val foto = p.urlImagen?.let { descargar(it, lado = 1200) }
+        if (foto != null) {
+            c.drawBitmap(foto, recorteCentrado(foto, ancho, altoFoto), areaFoto, Paint(Paint.FILTER_BITMAP_FLAG))
+            foto.recycle()
+        } else {
+            val pInicial = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = verde; textSize = 420f; typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
+            }
+            val inicial = p.nombre.trim().firstOrNull()?.uppercase() ?: "A"
+            c.drawText(inicial, ancho / 2f, altoFoto / 2f + 150f, pInicial)
+        }
+        // Filo verde entre la foto y la franja
+        c.drawRect(0f, altoFoto.toFloat(), ancho.toFloat(), altoFoto + 10f, Paint().apply { color = verde })
+
+        val pEtiqueta = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = verde; textSize = 34f; typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.25f; textAlign = Paint.Align.CENTER
+        }
+        val pNombre = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tinta; textSize = 64f; typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+        }
+        val pPrecio = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = verde; textSize = 112f; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
+        }
+        val pPie = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tintaSuave; textSize = 32f; textAlign = Paint.Align.CENTER
+        }
+        val nombre = StaticLayout.Builder
+            .obtain(p.nombre, 0, p.nombre.length, pNombre, ancho - 160)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setMaxLines(2)
+            .setEllipsize(android.text.TextUtils.TruncateAt.END)
+            .build()
+
+        // El bloque de texto se centra en el espacio libre de la franja
+        val altoEtiqueta = 34
+        val bloque = altoEtiqueta + 28 + nombre.height + 24 + 112 + 40 + 32
+        val inicioLibre = altoFoto + 10
+        val finLibre = alto - zonaSeguraAbajo
+        var y = inicioLibre + ((finLibre - inicioLibre - bloque) / 2).coerceAtLeast(24)
+
+        y += altoEtiqueta
+        c.drawText("ALUSHESTORE", ancho / 2f, y.toFloat(), pEtiqueta)
+        y += 28
+        c.save()
+        c.translate(80f, y.toFloat())
+        nombre.draw(c)
+        c.restore()
+        y += nombre.height + 24 + 100
+        c.drawText(precio(p), ancho / 2f, y.toFloat(), pPrecio)
+        y += 40 + 32
+        c.drawText("Pregunta por el tuyo · alushe.store", ancho / 2f, y.toFloat(), pPie)
+
+        return guardar(context, bmp)
+    }
+
+    /** JPEG al 95 en caché, listo para compartir. Libera el bitmap. */
+    private fun guardar(context: Context, bmp: Bitmap): Uri {
         val dir = File(context.cacheDir, "catalogo").apply { mkdirs() }
         val archivo = File(dir, "catalogo_alushe.jpg")
         FileOutputStream(archivo).use { bmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
         bmp.recycle()
-        fotos.forEach { it?.recycle() }
-
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", archivo)
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", archivo)
     }
 
     fun compartirImagen(context: Context, uri: Uri, productos: List<ProductoUnificado>) {
@@ -197,7 +294,7 @@ object CatalogoCompartible {
     }
 
     /** Baja una foto reducida. null si no hay red o la URL no sirve. */
-    private fun descargar(url: String): Bitmap? = try {
+    private fun descargar(url: String, lado: Int = 600): Bitmap? = try {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 8_000
             readTimeout = 8_000
@@ -209,9 +306,9 @@ object CatalogoCompartible {
                 val bytes = entrada.readBytes()
                 val opciones = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opciones)
-                // Basta con ~600px por lado para una tarjeta de 500px
+                // Se reduce sin bajar de [lado] px: 600 para una tarjeta, 1200 para un estado
                 var muestra = 1
-                while (opciones.outWidth / (muestra * 2) >= 600 && opciones.outHeight / (muestra * 2) >= 600) muestra *= 2
+                while (opciones.outWidth / (muestra * 2) >= lado && opciones.outHeight / (muestra * 2) >= lado) muestra *= 2
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
                     inSampleSize = muestra
                     inPreferredConfig = Bitmap.Config.ARGB_8888

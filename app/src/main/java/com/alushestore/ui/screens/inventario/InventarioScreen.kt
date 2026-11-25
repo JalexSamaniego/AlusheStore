@@ -822,7 +822,10 @@ private fun ProductoItemCard(
         border = if (seleccionado == true) androidx.compose.foundation.BorderStroke(1.5.dp, AlusheGreen) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+      Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        // La misma foto que llevará la imagen al compartir
+        FotoArticulo(producto)
+        Column(modifier = Modifier.weight(1f)) {
             // Header con SKU, origen y Ubicación
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -973,6 +976,44 @@ private fun ProductoItemCard(
                     }
                 }
             }
+        }
+      }
+    }
+}
+
+/**
+ * Miniatura del artículo: la misma foto que irá en la imagen compartida.
+ * Los productos que sólo existen en el teléfono no tienen foto; llevan su
+ * inicial, igual que en la imagen.
+ */
+@Composable
+private fun FotoArticulo(producto: ProductoUnificado) {
+    Box(
+        modifier = Modifier
+            .size(76.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(AlusheCreamDark),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            producto.nombre.trim().firstOrNull()?.uppercase() ?: "A",
+            fontFamily = PlayfairDisplay,
+            fontWeight = FontWeight.Bold,
+            fontSize = 30.sp,
+            color = AlusheGreenDark
+        )
+        if (!producto.urlImagen.isNullOrBlank()) {
+            // Encima de la inicial: mientras baja, o si falla, se ve la inicial
+            coil.compose.AsyncImage(
+                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    .data(producto.urlImagen)
+                    .crossfade(true)
+                    .size(240)
+                    .build(),
+                contentDescription = producto.nombre,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+            )
         }
     }
 }

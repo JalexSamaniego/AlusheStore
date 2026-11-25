@@ -22,8 +22,8 @@ android {
         applicationId "com.alushestore"
         minSdk 26
         targetSdk 34
-        versionCode 8
-        versionName "2.1.0"
+        versionCode 9
+        versionName "2.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary true
@@ -111,6 +111,9 @@ dependencies {
     implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
     // Splash Screen
     implementation 'androidx.core:core-splashscreen:1.0.1'
+
+    // Fotos del catálogo web en la lista (caché en memoria y disco)
+    implementation 'io.coil-kt:coil-compose:2.5.0'
 
     // Google Drive API
     implementation 'com.google.android.gms:play-services-auth:20.7.0'

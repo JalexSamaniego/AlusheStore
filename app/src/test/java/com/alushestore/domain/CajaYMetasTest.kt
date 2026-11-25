@@ -54,15 +54,15 @@ class CajaYMetasTest {
 
     @Test
     fun `sin metas no hay progreso que mostrar`() {
-        assertNull(ProgresoMetas.de(MetasConfig(), listOf(venta(100.0, null)), "noviembre"))
+        assertNull(ProgresoMetas.de(MetasConfig(), listOf(venta(100.0, null)), "Tianguis centro"))
     }
 
     @Test
-    fun `la meta general suma todas las ventas del mes`() {
+    fun `la meta general suma las ventas que recibe de la base`() {
         val p = ProgresoMetas.de(
             MetasConfig(metaMensual = 1000.0),
             listOf(venta(300.0, null), venta(200.0, MetodoPago.EFECTIVO, vendedor = "Alejandro")),
-            "noviembre"
+            "Tianguis centro"
         )!!
         assertEquals(500.0, p.general!!.vendido, 0.001)
         assertEquals(50, p.general!!.porcentaje)
@@ -74,12 +74,19 @@ class CajaYMetasTest {
         val p = ProgresoMetas.de(
             MetasConfig(porVendedor = mapOf("Dulce" to 400.0, "Alejandro" to 100.0)),
             listOf(venta(200.0, null, "Dulce"), venta(150.0, null, "Alejandro")),
-            "noviembre"
+            "Tianguis centro"
         )!!
         val dulce = p.porVendedor.first { it.etiqueta == "Dulce" }
         val alejandro = p.porVendedor.first { it.etiqueta == "Alejandro" }
         assertEquals(50, dulce.porcentaje)
         assertEquals(150, alejandro.porcentaje)
         assertEquals(0.0, alejandro.falta, 0.001)
+    }
+
+    @Test
+    fun `la meta lleva el nombre de su base`() {
+        val p = ProgresoMetas.de(MetasConfig(metaMensual = 500.0), emptyList(), "Tianguis centro")!!
+        assertEquals("Meta · Tianguis centro", p.general!!.etiqueta)
+        assertEquals(0.0, p.general!!.vendido, 0.001)
     }
 }

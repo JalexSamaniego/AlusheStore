@@ -49,22 +49,25 @@ data class AvanceMeta(val etiqueta: String, val meta: Double, val vendido: Doubl
     val falta: Double get() = (meta - vendido).coerceAtLeast(0.0)
 }
 
-/** Las metas del mes con lo vendido. null si no hay ninguna meta puesta. */
+/**
+ * Las metas de una base con lo vendido en ella. null si esa base no tiene
+ * ninguna meta puesta. Sólo cuentan las ventas de esa base, no las de otras.
+ */
 data class ProgresoMetas(
     val general: AvanceMeta?,
     val porVendedor: List<AvanceMeta>
 ) {
     companion object {
-        fun de(config: MetasConfig, ventasDelMes: List<VentaEntity>, nombreMes: String): ProgresoMetas? {
+        fun de(config: MetasConfig, ventasDeBase: List<VentaEntity>, nombreBase: String): ProgresoMetas? {
             if (!config.activa) return null
             val general = config.metaMensual?.let {
-                AvanceMeta("Meta de $nombreMes", it, ventasDelMes.sumOf { v -> v.monto })
+                AvanceMeta("Meta · $nombreBase", it, ventasDeBase.sumOf { v -> v.monto })
             }
             val porVendedor = config.porVendedor.map { (nombre, meta) ->
                 AvanceMeta(
                     nombre,
                     meta,
-                    ventasDelMes.filter { it.vendedor.equals(nombre, ignoreCase = true) }.sumOf { it.monto }
+                    ventasDeBase.filter { it.vendedor.equals(nombre, ignoreCase = true) }.sumOf { it.monto }
                 )
             }.sortedBy { it.etiqueta }
             return ProgresoMetas(general, porVendedor)

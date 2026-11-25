@@ -11,7 +11,6 @@ import com.alushestore.R
 import com.alushestore.data.local.ActiveUserManager
 import com.alushestore.data.local.AlusheDatabase
 import com.alushestore.data.local.MetasManager
-import com.alushestore.data.repository.BasesVentasRepository
 import com.alushestore.ui.components.toMXN
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,12 +76,14 @@ object AlusheWidgetUpdater {
                     totalHoy = ventas.filter { it.fecha >= inicioHoy }.sumOf { it.monto }
                 }
 
-                // Avance de la meta del mes, si hay. Va en la etiqueta de "hoy"
-                // para no agregarle altura al widget.
-                val metas = MetasManager.getInstance(appContext).config.value
-                val etiquetaHoy = metas.metaMensual?.let { meta ->
-                    val vendidoMes = BasesVentasRepository(db).getVentasDelMesSync().sumOf { it.monto }
-                    "HOY · META ${((vendidoMes / meta) * 100).toInt()}%"
+                // Avance de la meta de la base activa, si tiene. Va en la
+                // etiqueta de "hoy" para no agregarle altura al widget.
+                val etiquetaHoy = baseActiva?.let { base ->
+                    val metas = MetasManager.getInstance(appContext)
+                    metas.adoptarMetaAnterior(base.id)
+                    metas.configDe(base.id).metaMensual?.let { meta ->
+                        "HOY · META ${((totalBase / meta) * 100).toInt()}%"
+                    }
                 } ?: "VENDIDO HOY"
 
                 // Actualizar widgets compactos (4x1)

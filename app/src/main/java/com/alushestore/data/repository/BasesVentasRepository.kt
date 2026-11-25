@@ -85,30 +85,7 @@ class BasesVentasRepository(private val db: AlusheDatabase) {
         db.ventaDao().updateVenta(venta)
     }
 
-    /** Ventas de todas las bases en el mes de calendario en curso (para la meta) */
-    fun getVentasDelMes(): Flow<List<VentaEntity>> {
-        val (desde, hasta) = rangoDelMes()
-        return db.ventaDao().getVentasEntre(desde, hasta)
-    }
-
-    suspend fun getVentasDelMesSync(): List<VentaEntity> {
-        val (desde, hasta) = rangoDelMes()
-        return db.ventaDao().getVentasEntreSync(desde, hasta)
-    }
-
     // ── Helpers de tiempo ─────────────────────────────────────────────────────
-
-    private fun rangoDelMes(): Pair<Long, Long> {
-        val cal = Calendar.getInstance()
-        cal.set(Calendar.DAY_OF_MONTH, 1)
-        cal.set(Calendar.HOUR_OF_DAY, 0)
-        cal.set(Calendar.MINUTE, 0)
-        cal.set(Calendar.SECOND, 0)
-        cal.set(Calendar.MILLISECOND, 0)
-        val desde = cal.timeInMillis
-        cal.add(Calendar.MONTH, 1)
-        return desde to cal.timeInMillis - 1
-    }
 
     private fun inicioDelDia(): Long {
         val cal = Calendar.getInstance()
