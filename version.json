@@ -1,8 +1,8 @@
 {
-  "versionCode": 8,
-  "versionName": "2.1.0",
-  "titulo": "Actualización v2.1.0 disponible",
-  "notas": "• Método de pago al cobrar: efectivo, transferencia o tarjeta\n• Caja del día: toca \"Hoy\" para ver cuánto efectivo debe haber en caja\n• Compartir catálogo por WhatsApp como imagen con fotos o como texto\n• Exportar ventas, cortes e inventario a Excel, y el corte a PDF\n• Meta del mes con barra de avance en la pantalla principal y el widget",
+  "versionCode": 9,
+  "versionName": "2.2.0",
+  "titulo": "Actualización v2.2.0 disponible",
+  "notas": "• La meta ahora es por base: cuenta sólo las ventas de la base activa\n• Compartir un solo artículo crea una imagen lista para estado de WhatsApp\n• El catálogo compartido usa los colores de Alushe\n• La lista de Stock muestra la foto de cada artículo",
   "apkUrl": "https://github.com/JalexSamaniego/AlusheStore/releases/latest/download/AlusheStore.apk",
-  "sha256": "97facb96c27f6bfa1452ec59fe50160a1d5e0e90ae541d3bb52e05aa04a8bb81"
+  "sha256": "ee4395ae7970c7f6605c710968c2313b2c8a026b849ba1736932c79f15776d40"
 }
